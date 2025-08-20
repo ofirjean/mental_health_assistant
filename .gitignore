@@ -35,3 +35,6 @@ node_modules/
 .env
 app/.env
 values.local.yaml
+.env
+app/.env
+values.local.yaml
