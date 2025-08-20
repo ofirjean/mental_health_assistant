@@ -1,0 +1,39 @@
+services:
+  jira:
+    image: atlassian/jira-software:latest
+    container_name: jira
+    ports:
+      - "8090:8080"  # Maps port 8080 of the container to 8090 on your local machine
+    environment:
+      - ATL_JIRA_HOME=/var/atlassian/jira
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=jiradb
+      - DB_USER=jirauser
+      - DB_PASSWORD=yourpassword
+    volumes:
+      - jira_data:/var/atlassian/jira
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:latest
+    container_name: jira_db
+    environment:
+      - POSTGRES_USER=jirauser
+      - POSTGRES_PASSWORD=yourpassword
+      - POSTGRES_DB=jiradb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"  # Exposes the Postgres port to the local machine
+    networks:
+      - default  # Uses the default Docker bridge network
+
+volumes:
+  jira_data:
+  postgres_data:
+
+networks:
+  default:
+    driver: bridge

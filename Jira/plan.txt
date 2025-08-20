@@ -1,0 +1,71 @@
+Work Plan and Timeline (Aug 5th - Aug 24th)
+Week 1: Infrastructure Setup
+Goal: Set up the foundational infrastructure for the project.
+
+Day 1-2 (Aug 5th - Aug 6th):
+
+Kubernetes Cluster: Set up Docker Desktop with Kubernetes enabled.
+
+Jenkins Server: Install Jenkins using Helm on the Kubernetes cluster.
+
+Configure Jenkins agents and necessary plugins.
+
+Day 3-4 (Aug 7th - Aug 8th):
+
+ArgoCD Setup: Implement ArgoCD for continuous deployment.
+
+Prometheus & Grafana: Set up monitoring solutions using Helm.
+
+Day 5-7 (Aug 9th - Aug 11th):
+
+MongoDB Setup: Implement MongoDB via Helm for the backend database.
+
+At the end of Week 1, you’ll have a working infrastructure with Kubernetes, Jenkins, ArgoCD, Prometheus & Grafana, and MongoDB set up. Ask yourself if you’d like to complete any bonus tasks like customizing UI, adding a logo, etc. (optional).
+
+Week 2: Application Development
+Goal: Start the application development and connect the backend to the infrastructure.
+
+Day 8-9 (Aug 12th - Aug 13th):
+
+Flask Application: Begin coding the main logic of the application in Python3.
+
+Database Layer: Set up the database connection to MongoDB.
+
+Day 10-12 (Aug 14th - Aug 16th):
+
+Docker Application: Write Dockerfiles for the Flask application and database.
+
+Unit Tests: Write unit tests using Pytest.
+
+CI/CD Setup for Feature Branch: Set up Jenkins pipelines for feature-branch integration.
+
+Day 13-14 (Aug 17th - Aug 18th):
+
+Web Frontend: Develop the basic web frontend to expose the application.
+
+At the end of Week 2, you should have the application written and containerized. The unit tests should be working, and Jenkins should be set up for the feature branch. Ask yourself if you want to implement any bonus tasks, such as adding features to the frontend or integrating AI (optional).
+
+Week 3: CI/CD, Helm, and Monitoring
+Goal: Finalize deployment automation, testing, and monitoring integration.
+
+Day 15-16 (Aug 19th - Aug 20th):
+
+CI Pipeline for Main Branch: Set up Jenkins to automatically build and deploy from the main branch.
+
+Helm Chart Deployment: Write the Helm chart for deploying the application in Kubernetes.
+
+Day 17-18 (Aug 21st - Aug 22nd):
+
+Testing and Debugging: Ensure all components (CI/CD, frontend, backend) are working together.
+
+Monitoring Integration: Integrate Prometheus and Grafana to monitor application health.
+
+Day 19-20 (Aug 23rd - Aug 24th):
+
+Final Checks: Run the application in a staging environment. Ensure that monitoring, CI/CD, and deployments are working as expected.
+
+Documentation: Write the README files and documentation for your setup.
+
+End of the Project
+You should have a fully functional application deployed on Kubernetes, with Jenkins pipelines for CI/CD, integrated Prometheus and Grafana for monitoring, and all tasks completed.
+

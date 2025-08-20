@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Your AI-Generated Advice - MindCare AI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="container">
+      <a href="{{ url_for('index') }}" class="navbar-brand">MindCare AI</a>
+      <ul class="nav-links">
+        {% if current_user.is_authenticated %}
+          <li><a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a></li>
+          <li><a class="nav-link" href="{{ url_for('ask') }}">Ask</a></li>
+          <li><a class="nav-link" href="{{ url_for('logout') }}">Logout</a></li>
+        {% else %}
+          <li><a class="nav-link" href="{{ url_for('login') }}">Login</a></li>
+          <li><a class="nav-link" href="{{ url_for('register') }}">Register</a></li>
+        {% endif %}
+      </ul>
+    </div>
+  </nav>
+
+  <main class="main-content">
+    <div class="container">
+      {% with msgs = get_flashed_messages(with_categories=true) %}
+        {% if msgs %}
+          <ul class="flash-list">
+            {% for cat, msg in msgs %}
+              <li class="flash flash-{{ cat|e }}">{{ msg }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      {% endwith %}
+
+      <div class="card" style="max-width: 800px; margin: auto;">
+        <h1>Personalized Advice</h1>
+
+        <section style="margin-top:1rem;">
+          <h2>Your Question</h2>
+          <p class="muted">{{ (question or 'No question provided')|e }}</p>
+        </section>
+
+        <section style="margin-top:1.5rem;">
+          <h3>AI’s Response</h3>
+          <div class="answer-box">
+            <p>{{ (answer or 'No answer available yet.')|e }}</p>
+          </div>
+        </section>
+
+        <div class="actions" style="margin-top:1.5rem; display:flex; gap:.75rem; flex-wrap:wrap;">
+          <a class="btn btn-secondary" href="{{ url_for('ask') }}">Ask Another Question</a>
+          <a class="btn btn-outline" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <p>&copy; 2025 MindCare AI - Your Mental Health Companion</p>
+    </div>
+  </footer>
+</body>
+</html>

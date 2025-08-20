@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Ask - MindCare AI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="container">
+      <a href="{{ url_for('index') }}" class="navbar-brand">MindCare AI</a>
+      <ul class="nav-links">
+        <li><a class="nav-link" href="{{ url_for('login') }}">Login</a></li>
+        <li><a class="nav-link" href="{{ url_for('register') }}">Register</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="main-content">
+    <div class="container">
+      {% with msgs = get_flashed_messages(with_categories=true) %}
+        {% if msgs %}
+          <ul class="flash-list">
+            {% for cat, msg in msgs %}
+              <li class="flash flash-{{ cat|e }}">{{ msg }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      {% endwith %}
+
+      <div class="card">
+        <h2>Ask a question</h2>
+        <form method="POST" action="{{ url_for('ask') }}" novalidate>
+          {{ form.hidden_tag() }}
+
+          <div class="form-group">
+            <label for="question">Your Question</label>
+            {{ form.question(id="question", rows=6, cols=60, class_="textarea") }}
+            {% if form.question.errors %}
+              <ul class="field-errors">
+                {% for err in form.question.errors %}
+                  <li>{{ err }}</li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+          </div>
+
+          <button type="submit" class="btn btn-primary">Ask</button>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p>&copy; 2025 MindCare AI - Your Mental Health Companion

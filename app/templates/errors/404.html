@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>404 • Page Not Found</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+    body { margin: 0; background: #0b1020; color: #eaeef7; display: grid; place-items: center; min-height: 100vh; }
+    .card { text-align: center; padding: 2.5rem; max-width: 560px; background: #111936; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+    h1 { font-size: 3rem; margin: 0 0 .25rem; letter-spacing: .03em; }
+    p { opacity: .9; margin: .25rem 0 .75rem; }
+    code { background: #0e1530; padding: .2rem .4rem; border-radius: 6px; }
+    .actions { display: flex; gap: .75rem; justify-content: center; margin-top: 1rem; flex-wrap: wrap; }
+    .btn { padding: .65rem 1rem; border-radius: 10px; border: 1px solid #3a4a7a; text-decoration: none; color: #eaeef7; background: #1a2550; }
+    .btn.outline { background: transparent; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>404</h1>
+    <p>We couldn’t find the page <code>{{ request.path }}</code>.</p>
+    <div class="actions">
+      <!-- Home link that respects a sub-path (script_root) and never calls url_for -->
+      <a class="btn" href="{{ (request.script_root|default('')) ~ '/' }}">Go Home</a>
+      <a class="btn outline" href="javascript:history.back()">Go Back</a>
+    </div>
+  </main>
+</body>
+</html>

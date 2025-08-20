@@ -1,0 +1,107 @@
+Revised Task List Structure (Example):
+INF-01 - Kubernetes Cluster Setup
+
+Set up Docker Desktop on local machine
+
+Enable Kubernetes on Docker Desktop
+
+INF-02 - Jenkins Server Setup
+
+Install Jenkins using Helm
+
+Configure Jenkins agents as pods
+
+Install necessary plugins (Kubernetes, Git, etc.)
+
+Set up Jenkins pipelines for feature and main branches
+
+Bonus: Integrate Jenkins Prometheus exporter
+
+Bonus: Customize Jenkins UI (Avatar, additional changes)
+
+INF-03 - ArgoCD Setup
+
+Install ArgoCD using Helm
+
+Connect the application to ArgoCD for deployment
+
+Write detailed README for ArgoCD setup
+
+Bonus: Customize ArgoCD UI (Logo, Banner)
+
+INF-04 - Prometheus & Grafana Setup
+
+Install Prometheus and Grafana using Helm
+
+Configure Prometheus for metrics collection
+
+Configure Grafana for dashboard visualization
+
+Write README for Prometheus and Grafana setup
+
+Bonus: Customize Grafana UI (Avatar logo)
+
+INF-05 - MongoDB Database Setup
+
+Install MongoDB using Helm or kubectl
+
+Configure MongoDB for the application
+
+Tasks for the Application (APP-XX):
+APP-01 - Python3 Application Development
+
+Develop core application logic in Python3
+
+Set up the database layer between the application and MongoDB
+
+APP-02 - Dockerize the Application
+
+Write Dockerfile for the backend (Flask app)
+
+Write Dockerfile for MongoDB (if necessary)
+
+Build and push Docker images to DockerHub
+
+APP-03 - Write Unit Tests
+
+Write unit tests for each feature of the application
+
+Set up Pytest to run in the CI pipeline
+
+APP-04 - Database Integration
+
+Implement database access layer for MongoDB
+
+Connect database layer to Flask application
+
+APP-05 - Web Frontend Development
+
+Develop the frontend in Flask or another language
+
+Bonus: Add student's avatar to the frontend
+
+APP-06 - Helm Deployment
+
+Write Helm chart for application deployment
+
+Test Helm chart deployment on Kubernetes
+
+Bonus: Set up Kubernetes job for post-deployment sanity check
+
+CI/CD Pipelines (PIPE-XX):
+PIPE-01 - Feature Branch CI Pipeline
+
+Set up Jenkins CI pipeline for feature branch
+
+Automate build, test, and deployment stages
+
+PIPE-02 - Main Branch CI Pipeline
+
+Set up Jenkins CI pipeline for main branch
+
+Automate build, test, and deployment for the main branch
+
+PIPE-03 - Continuous Deployment Pipeline
+
+Set up CD pipeline for all environments (Dev, Staging, Prod)
+

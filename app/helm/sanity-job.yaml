@@ -1,0 +1,60 @@
+{{- if .Values.sanityCheck.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "mha.fullname" . }}-sanity
+  annotations:
+    # Run automatically after install and after upgrade
+    "helm.sh/hook": post-install,post-upgrade
+    # Ensure it runs after regular resources are created
+    "helm.sh/hook-weight": "10"
+    # Clean up on success and before next run
+    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "mha.name" . }}-sanity
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: curl
+          image: {{ .Values.sanityCheck.image }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HOST
+              value: "{{ include "mha.fullname" . }}"
+            - name: PORT
+              value: "{{ .Values.service.port | toString }}"
+            - name: PATH
+              value: "{{ .Values.sanityCheck.path }}"
+            - name: INTERVAL
+              value: "{{ .Values.sanityCheck.intervalSeconds | toString }}"
+            - name: MAX_ATTEMPTS
+              value: "{{ .Values.sanityCheck.maxAttempts | toString }}"
+          {{- range $k, $v := .Values.sanityCheck.extraEnv }}
+            - name: {{ $k }}
+              value: "{{ $v }}"
+          {{- end }}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              url="http://${HOST}:${PORT}${PATH}"
+              echo "Sanity check: GET ${url}"
+              i=1
+              while [ "$i" -le "${MAX_ATTEMPTS}" ]; do
+                code=$(curl -s -o /dev/null -w "%{http_code}" "$url" || true)
+                if [ "$code" = "200" ]; then
+                  echo "✅ Sanity OK (HTTP 200) on attempt $i"
+                  exit 0
+                fi
+                echo "Waiting... attempt $i/${MAX_ATTEMPTS} (last code: ${code:-none})"
+                sleep "${INTERVAL}"
+                i=$((i+1))
+              done
+              echo "❌ Sanity check FAILED: ${url} did not return 200 after ${MAX_ATTEMPTS} attempts."
+              exit 1
+{{- end }}

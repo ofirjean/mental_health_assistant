@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: mental-health
+  labels:
+    app.kubernetes.io/name: mental-health
+data:
+  GEMINI_MODEL: "gemini-1.5-flash"

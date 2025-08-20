@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Dashboard - MindCare AI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="container">
+      <a href="{{ url_for('index') }}" class="navbar-brand">MindCare AI</a>
+      <ul class="nav-links">
+        {% if current_user.is_authenticated %}
+          <li><a class="nav-link" href="{{ url_for('ask') }}">Ask</a></li>
+          <li><a class="nav-link" href="{{ url_for('logout') }}">Logout</a></li>
+        {% else %}
+          <li><a class="nav-link" href="{{ url_for('login') }}">Login</a></li>
+          <li><a class="nav-link" href="{{ url_for('register') }}">Register</a></li>
+        {% endif %}
+      </ul>
+    </div>
+  </nav>
+
+  <main class="main-content">
+    <div class="container">
+      {% with msgs = get_flashed_messages(with_categories=true) %}
+        {% if msgs %}
+          <ul class="flash-list">
+            {% for cat, msg in msgs %}
+              <li class="flash flash-{{ cat|e }}">{{ msg }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      {% endwith %}
+
+      <div class="card">
+        <h1>Welcome, {{ current_user.username|e }}!</h1>
+        <p class="muted">Your personal space to track progress and ask questions.</p>
+      </div>
+
+      <div class="dashboard-grid">
+        <!-- Profile Card -->
+        <div class="card">
+          <h2>Your Profile</h2>
+          <dl class="kv">
+            <dt>Age</dt>
+            <dd>{{ (user_data.age if user_data and user_data.age is not none else 'Not set')|e }}</dd>
+
+            <dt>Goals</dt>
+            <dd>{{ (user_data.goals if user_data and user_data.goals else 'Not set')|e }}</dd>
+
+            <dt>Exercise Preference</dt>
+            <dd>{{ (user_data.preferences.get('exercise') if user_data and user_data.preferences else 'Not set')|e }}</dd>
+          </dl>
+
+          <div class="actions" style="margin-top:1rem;">
+            <a class="btn btn-secondary" href="{{ url_for('profile') }}">Edit Profile</a>
+            <a class="btn btn-outline" href="{{ url_for('ask') }}">Ask a Question</a>
+          </div>
+        </div>
+
+        <!-- Recent Q&A Card -->
+        <div class="card">
+          <h2>Recent Q&amp;A</h2>
+          {% if recent_qa %}
+            <ul class="list">
+              {% for qa in recent_qa %}
+                <li class="list-item">
+                  <div class="qa-block">
+                    <div class="qa-q"><strong>Q:</strong> {{ qa['question']|e }}</div>
+                    <div class="qa-a"><strong>A:</strong> {{ qa['answer']|e }}</div>
+                    {% if qa.get('created_at') %}
+                      <div class="muted" style="font-size:.9rem;">{{ qa['created_at'] }}</div>
+                    {% endif %}
+                  </div>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="muted">No recent questions yet. <a href="{{ url_for('ask') }}">Ask your first one</a>.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <p>&copy; 2025 MindCare AI - Your Mental Health Companion</p>
+    </div>
+  </footer>
+</body>
+</html>
