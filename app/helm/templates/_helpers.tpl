@@ -1,7 +1,11 @@
-{{- define "mha.name" -}}
-{{- .Chart.Name | trunc 63 | trimSuffix "-" -}}
-{{- end }}
+{{- define "app.chart" -}}
+{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" -}}
+{{- end -}}
 
-{{- define "mha.fullname" -}}
-{{ include "mha.name" . }}
+{{- define "app.commonLabels" -}}
+helm.sh/chart: {{ include "app.chart" . }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- with .Chart.AppVersion }}
+app.kubernetes.io/version: {{ . | quote }}
 {{- end }}
+{{- end -}}

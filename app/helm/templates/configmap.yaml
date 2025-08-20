@@ -1,10 +1,9 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "mha.fullname" . }}-config
+  name: app-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "app.commonLabels" . | nindent 4 }}
 data:
-  PORT: "{{ .Values.service.port }}"
-  MONGO_URI: "mongodb://{{ include "mha.fullname" . }}-mongo:{{ .Values.mongo.service.port }}/{{ .Values.env.mongoDatabase }}"
-{{- range $k, $v := .Values.env.extra }}
-  {{ $k }}: "{{ $v }}"
-{{- end }}
+  GEMINI_MODEL: {{ .Values.env.GEMINI_MODEL | quote }}

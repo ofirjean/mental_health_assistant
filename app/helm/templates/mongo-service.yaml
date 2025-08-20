@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "app.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/name: mongo
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  ports:
+    - name: mongo
+      port: {{ .Values.mongo.servicePort }}
+      targetPort: {{ .Values.mongo.servicePort }}
+  selector:
+    app.kubernetes.io/name: mongo
+    app.kubernetes.io/instance: {{ .Release.Name }}

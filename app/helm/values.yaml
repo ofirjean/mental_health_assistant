@@ -1,40 +1,31 @@
 image:
   repository: ofirjean/mental-health-assistant
-  tag: v0.1.2
+  tag: latest
   pullPolicy: IfNotPresent
 
-env:
-  - name: FLASK_DEBUG
-    value: "0"
-  - name: PORT
-    value: "5000"
-  - name: GEMINI_MODEL
-    value: "gemini-1.5-flash"
-  - name: MONGO_URI
-    value: "mongodb://mental-health-assistant-mongo:27017/mental_health_db"
-
-secretEnv:
-  - name: GEMINI_API_KEY
-    key: GEMINI_API_KEY
-    secretName: mha-secrets
-  - name: SECRET_KEY
-    key: SECRET_KEY
-    secretName: mha-secrets
-
 service:
-  type: ClusterIP
-  port: 5000
+  type: NodePort
+  port: 80
+  targetPort: 5000
+  nodePort: 30080
 
-livenessProbe:
-  path: /healthz
-readinessProbe:
-  path: /healthz
+env:
+  GEMINI_MODEL: "gemini-1.5-flash"
 
-sanityCheck:
+secret:
+  SECRET_KEY: "dev-secret-change-me"
+  MONGO_URI: "mongodb://mongo:27017/mental_health_db"
+  GEMINI_API_KEY: ""
+  GOOGLE_API_KEY: ""
+  WTF_CSRF_SECRET_KEY: ""
+  PORT: "5000"
+  FLASK_DEBUG: "0"
+
+mongo:
+  image: "mongo:8.0"
+  servicePort: 27017
+  storage: "2Gi"
+
+sanityTest:
   enabled: true
   image: curlimages/curl:8.10.0
-  path: /healthz
-  expectedRegex: '"status"\s*:\s*"ok"'
-  timeoutSeconds: 3  
-  retries: 30         
-  backoffSeconds: 2   

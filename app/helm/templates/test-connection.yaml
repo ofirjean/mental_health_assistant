@@ -1,0 +1,15 @@
+{{- if .Values.sanityTest.enabled }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Release.Name }}-test-connection
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  restartPolicy: Never
+  containers:
+    - name: curl
+      image: {{ .Values.sanityTest.image }}
+      args: ["-fsS", "http://flask-app/healthz"]
+{{- end }}

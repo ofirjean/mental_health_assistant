@@ -1,6 +1,6 @@
 apiVersion: v2
-name: mental-health-assistant
-description: Flask + Mongo Helm chart
+name: mental-health-app
+description: Flask + Mongo app for local K8s via Helm
 type: application
-version: 0.1.0        
-appVersion: "0.1.0"   
+version: 0.1.0
+appVersion: "0.1.0"
