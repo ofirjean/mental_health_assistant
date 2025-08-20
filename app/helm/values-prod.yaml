@@ -1,0 +1,21 @@
+image:
+  repository: ofirjean/mental-health-assistant
+  tag: v0.1.8  # Jenkins updates this
+
+service:
+  type: NodePort
+  port: 80
+  targetPort: 5000
+  nodePort: 30080
+
+secret:
+  SECRET_KEY: dev-secret-change-me
+  MONGO_URI: mongodb://mongo:27017/mental_health_db
+
+env:
+  GEMINI_MODEL: gemini-1.5-flash
+
+mongo:
+  image: mongo:8.0
+  servicePort: 27017
+  storage: 2Gi
