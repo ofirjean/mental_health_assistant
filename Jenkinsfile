@@ -8,9 +8,9 @@ pipeline {
     buildDiscarder(logRotator(numToKeepStr: '20'))
   }
 
-  // Poll SCM every 2 minutes
+  // Poll SCM every 2 minutes (for single-pipeline jobs; multibranch uses job-level scan trigger)
   triggers {
-    pollSCM('*/2 * * * *')   // use 'H/2 * * * *' if you prefer hashed spreading
+    pollSCM('*/2 * * * *')   // or 'H/2 * * * *' for hashed spreading
   }
 
   parameters {
@@ -20,7 +20,7 @@ pipeline {
   environment {
     DOCKER_REPO     = 'ofirjean/mental-health-assistant'
     VALUES_FILE     = 'app/helm/values-prod.yaml'
-    CRED_DOCKERHUB  = 'DockerHub'   // matches your screenshot
+    CRED_DOCKERHUB  = 'DockerHub'   // username = DockerHub user, password = token/PAT
     CRED_GITHUB_PAT = 'github-pat'  // username = GitHub user, password = PAT
     CRED_GITLAB_PAT = 'gitlab-pat'  // username = GitLab user, password = PAT
   }
@@ -32,6 +32,28 @@ pipeline {
         sh '''
           git config --global --add safe.directory "$PWD"
           git status -sb || true
+        '''
+      }
+    }
+
+    stage('Sanity checks') {
+      steps {
+        sh '''
+          set -euo pipefail
+          echo "Branch: ${BRANCH_NAME}"
+          echo "Workspace: $PWD"
+          ls -la
+
+          # Docker availability
+          command -v docker || true
+          docker version || { echo "Docker not available on this agent"; exit 2; }
+
+          # Ensure values file exists
+          test -f "$VALUES_FILE" || { echo "Missing $VALUES_FILE"; exit 3; }
+
+          # Git details
+          git --version
+          git remote -v
         '''
       }
     }
@@ -95,13 +117,12 @@ pipeline {
             git add "$VALUES_FILE"
             git commit -m "ci: bump image tag to $TAG" || true
 
-            # Use PAT as password via https remote
+            # Push to GitHub using PAT as password
             git remote set-url origin "https://${GH_USER}:${GH_PAT}@github.com/ofirjean/mental_health_assistant.git"
-
             BRANCH="$(git rev-parse --abbrev-ref HEAD)"
             git push origin "HEAD:${BRANCH}"
 
-            # Optional traceability tag
+            # Optional: tag for traceability
             git tag -f "$TAG" || true
             git push origin --force "refs/tags/$TAG"
           '''
