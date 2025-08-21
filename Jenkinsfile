@@ -6,11 +6,12 @@ pipeline {
     ansiColor('xterm')
     disableConcurrentBuilds()
     buildDiscarder(logRotator(numToKeepStr: '20'))
+    overrideIndexTriggers(true) // allow triggers{} in multibranch
   }
 
-  // Poll SCM every 2 minutes (for single-pipeline jobs; multibranch uses job-level scan trigger)
+  // Poll SCM every 2 minutes (now honored in Multibranch)
   triggers {
-    pollSCM('*/2 * * * *')   // or 'H/2 * * * *' for hashed spreading
+    pollSCM('H/2 * * * *')
   }
 
   parameters {
@@ -20,16 +21,17 @@ pipeline {
   environment {
     DOCKER_REPO     = 'ofirjean/mental-health-assistant'
     VALUES_FILE     = 'app/helm/values-prod.yaml'
-    CRED_DOCKERHUB  = 'DockerHub'   // username = DockerHub user, password = token/PAT
-    CRED_GITHUB_PAT = 'github-pat'  // username = GitHub user, password = PAT
-    CRED_GITLAB_PAT = 'gitlab-pat'  // username = GitLab user, password = PAT
+    CRED_DOCKERHUB  = 'DockerHub'
+    CRED_GITHUB_PAT = 'github-pat'
+    CRED_GITLAB_PAT = 'gitlab-pat'
   }
 
   stages {
     stage('Checkout'){
       steps {
         checkout scm
-        sh '''
+        sh '''#!/usr/bin/env bash
+          set -euo pipefail
           git config --global --add safe.directory "$PWD"
           git status -sb || true
         '''
@@ -38,20 +40,17 @@ pipeline {
 
     stage('Sanity checks') {
       steps {
-        sh '''
+        sh '''#!/usr/bin/env bash
           set -euo pipefail
           echo "Branch: ${BRANCH_NAME}"
           echo "Workspace: $PWD"
           ls -la
 
-          # Docker availability
           command -v docker || true
           docker version || { echo "Docker not available on this agent"; exit 2; }
 
-          # Ensure values file exists
           test -f "$VALUES_FILE" || { echo "Missing $VALUES_FILE"; exit 3; }
 
-          # Git details
           git --version
           git remote -v
         '''
@@ -72,7 +71,7 @@ pipeline {
       when { branch 'main' }
       steps {
         withCredentials([usernamePassword(credentialsId: env.CRED_DOCKERHUB, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-          sh '''
+          sh '''#!/usr/bin/env bash
             set -euo pipefail
             echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
             docker build -t "$DOCKER_REPO:$TAG" app
@@ -86,12 +85,11 @@ pipeline {
     stage('Bump Helm image.tag'){
       when { branch 'main' }
       steps {
-        sh '''
+        sh '''#!/usr/bin/env bash
           set -euo pipefail
           if command -v yq >/dev/null 2>&1; then
             yq -i '.image.tag = env(TAG)' "$VALUES_FILE"
           else
-            # portable awk update inside the nearest top-level "image:" block
             awk -v tag="$TAG" '
               BEGIN{in_image=0}
               /^[[:space:]]*image:[[:space:]]*$/ {in_image=1; print; next}
@@ -110,7 +108,7 @@ pipeline {
       when { branch 'main' }
       steps {
         withCredentials([usernamePassword(credentialsId: env.CRED_GITHUB_PAT, usernameVariable: 'GH_USER', passwordVariable: 'GH_PAT')]) {
-          sh '''
+          sh '''#!/usr/bin/env bash
             set -euo pipefail
             git config user.name  "Jenkins CI"
             git config user.email "ci@local"
@@ -119,7 +117,7 @@ pipeline {
 
             # Push to GitHub using PAT as password
             git remote set-url origin "https://${GH_USER}:${GH_PAT}@github.com/ofirjean/mental_health_assistant.git"
-            BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+            BRANCH="${BRANCH_NAME}"
             git push origin "HEAD:${BRANCH}"
 
             # Optional: tag for traceability
@@ -134,11 +132,11 @@ pipeline {
       when { branch 'main' }
       steps {
         withCredentials([usernamePassword(credentialsId: env.CRED_GITLAB_PAT, usernameVariable: 'GL_USER', passwordVariable: 'GL_PAT')]) {
-          sh '''
+          sh '''#!/usr/bin/env bash
             set -euo pipefail
             git remote remove gitlab 2>/dev/null || true
             git remote add    gitlab "https://${GL_USER}:${GL_PAT}@gitlab.com/sela-tracks/1116/students/ofir/final-project.git"
-            BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+            BRANCH="${BRANCH_NAME}"
             git push gitlab "HEAD:${BRANCH}"
             git push gitlab "refs/tags/$TAG"
           '''
