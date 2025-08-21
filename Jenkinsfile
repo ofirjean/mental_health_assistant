@@ -9,7 +9,7 @@ pipeline {
     overrideIndexTriggers(true) // allow triggers{} in multibranch
   }
 
-  // Poll SCM every 2 minutes (now honored in Multibranch)
+  // Poll SCM every ~2 minutes (works in Multibranch thanks to overrideIndexTriggers)
   triggers {
     pollSCM('H/2 * * * *')
   }
@@ -21,9 +21,9 @@ pipeline {
   environment {
     DOCKER_REPO     = 'ofirjean/mental-health-assistant'
     VALUES_FILE     = 'app/helm/values-prod.yaml'
-    CRED_DOCKERHUB  = 'DockerHub'
-    CRED_GITHUB_PAT = 'github-pat'
-    CRED_GITLAB_PAT = 'gitlab-pat'
+    CRED_DOCKERHUB  = 'DockerHub'   // Jenkins cred ID (Username + token)
+    CRED_GITHUB_PAT = 'github-pat'  // Username + PAT
+    CRED_GITLAB_PAT = 'gitlab-pat'  // Username + PAT
   }
 
   stages {
@@ -46,11 +46,14 @@ pipeline {
           echo "Workspace: $PWD"
           ls -la
 
+          # Docker availability
           command -v docker || true
           docker version || { echo "Docker not available on this agent"; exit 2; }
 
+          # Ensure values file exists
           test -f "$VALUES_FILE" || { echo "Missing $VALUES_FILE"; exit 3; }
 
+          # Git details
           git --version
           git remote -v
         '''
@@ -70,6 +73,7 @@ pipeline {
     stage('Build & Push Image'){
       when { branch 'main' }
       steps {
+        echo "Using Docker Hub credential ID: ${CRED_DOCKERHUB}"
         withCredentials([usernamePassword(credentialsId: env.CRED_DOCKERHUB, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
           sh '''#!/usr/bin/env bash
             set -euo pipefail
@@ -90,6 +94,7 @@ pipeline {
           if command -v yq >/dev/null 2>&1; then
             yq -i '.image.tag = env(TAG)' "$VALUES_FILE"
           else
+            # portable awk update inside the nearest top-level "image:" block
             awk -v tag="$TAG" '
               BEGIN{in_image=0}
               /^[[:space:]]*image:[[:space:]]*$/ {in_image=1; print; next}
