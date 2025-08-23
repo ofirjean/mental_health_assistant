@@ -13,7 +13,7 @@ env:
   GEMINI_MODEL: "gemini-1.5-flash"
 
 secret:
-  SECRET_KEY: "dev-secret-change-me"
+  SECRET_KEY: "0dda2fec75c2b1a4ebf1795c96f9ff405a149f2e87932b26e99327f521037dd6"
   MONGO_URI: "mongodb://mongo:27017/mental_health_db"
   GEMINI_API_KEY: ""
   GOOGLE_API_KEY: ""

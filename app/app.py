@@ -415,3 +415,7 @@ if __name__ == '__main__':
     port = int(os.getenv("PORT", "5000"))
     debug = os.getenv("FLASK_DEBUG", "0") == "1"  # default off for k8s
     app.run(host="0.0.0.0", port=port, debug=debug)
+from flask import redirect, url_for
+@app.route("/", endpoint="home")
+def home():
+    return redirect(url_for("profile"))
