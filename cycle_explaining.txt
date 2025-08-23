@@ -1,0 +1,88 @@
+🔹 The Full Cycle
+1. Code
+
+You (or your team) write code for the application (Flask, frontend, DB configs, etc.).
+
+This code lives in your GitLab application repo (the “source code” repo).
+
+2. GitLab
+
+You push your changes (git push) to GitLab.
+
+This triggers your CI pipeline in Jenkins.
+
+3. Jenkins (CI)
+
+Jenkins builds the Docker image of your app using the code from GitLab.
+Example: docker build -t ofirjean/app:v0.1.5 .
+
+Jenkins pushes that image to Docker Hub (or another registry).
+
+Then Jenkins updates the GitOps repo with the new image tag in the Kubernetes manifests (YAML/Helm).
+
+e.g., deployment.yaml goes from v0.1.4 → v0.1.5
+
+Jenkins commits and pushes that change into GitLab (but this time, into your GitOps repo).
+
+4. Docker Hub
+
+Holds your built image: ofirjean/app:v0.1.5
+
+Kubernetes will later pull this image when ArgoCD applies the updated manifests.
+
+5. GitOps Repo
+
+This is a separate GitLab repo (the one you connected with ArgoCD).
+
+It doesn’t hold source code, only Kubernetes YAMLs or Helm charts that describe the desired state of your app.
+
+Jenkins edits this repo (to update the image tag), then commits → push.
+
+This repo becomes the single source of truth for deployments.
+
+6. ArgoCD (CD)
+
+ArgoCD continuously watches the GitOps repo.
+
+When Jenkins pushes a new manifest (e.g. updated image tag), ArgoCD notices the difference.
+
+ArgoCD syncs the change → applies the YAMLs/Helm charts into Kubernetes.
+
+7. Kubernetes
+
+The cluster reconciles the new manifests.
+
+It pulls the new image from Docker Hub.
+
+Deployments roll out new pods (blue/green or rolling update).
+
+Old pods terminate once new ones are ready.
+
+Your application is live with the updated version. 🎉
+
+🔹 Visual Flow
+[ Code ] 
+   ↓ push
+[ GitLab (source repo) ]
+   ↓ CI trigger
+[ Jenkins CI ] ───> [ Docker Hub (images) ]
+   │
+   └──> updates → [ GitOps Repo (YAMLs/Helm) ]
+                     ↓
+              [ ArgoCD (CD) ]
+                     ↓
+              [ Kubernetes Cluster ]
+
+🔹 Why this cycle is powerful
+
+Automation → no manual kubectl apply needed.
+
+Auditability → every deployment is a Git commit in the GitOps repo (history, rollbacks).
+
+Separation of concerns:
+
+Devs work on app repo
+
+Ops/Infra team manages manifests in GitOps repo
+
+Reliability → ArgoCD ensures the cluster state always matches Git.
