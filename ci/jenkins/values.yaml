@@ -1,0 +1,37 @@
+fullnameOverride: jenkins
+
+controller:
+  image:
+    registry: docker.io
+    repository: jenkins/jenkins
+    tag: "2.516.2-jdk21"
+
+  serviceType: NodePort
+  servicePort: 8080
+  nodePort: 32010
+
+  # run as non-root normally
+  containerSecurityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+  podSecurityContext:
+    fsGroup: 1000
+    fsGroupChangePolicy: "OnRootMismatch"
+
+  # one-time safety net to fix perms on recovered /var/jenkins_home
+  extraInitContainers: |
+    - name: fix-perms
+      image: alpine:3.19
+      command: ["/bin/sh","-lc","chown -R 1000:1000 /var/jenkins_home || true; chmod -R g+rwX /var/jenkins_home || true"]
+      securityContext:
+        runAsUser: 0
+      volumeMounts:
+        - name: jenkins-home
+          mountPath: /var/jenkins_home
+
+  persistence:
+    enabled: true
+    existingClaim: jenkins   # <-- your recovered PVC
+
+agent:
+  enabled: true

@@ -38,3 +38,5 @@ values.local.yaml
 .env
 app/.env
 values.local.yaml
+cd/argocd/.env
+ci/jenkins/secrets/

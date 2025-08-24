@@ -1,0 +1,34 @@
+# Namespace where Argo CD runs
+argoNamespace: argocd
+
+# Your GitLab repo (HTTPS)
+gitlab:
+  repoUrl: https://gitlab.com/sela-tracks/1116/students/ofir/final-project
+  username: ofirjean
+  pat: ""            # pass at install time: --set-string gitlab.pat=$ARGO_GITLAB_PAT
+
+# Optional: keep Argo objects scoped via an AppProject
+project:
+  enabled: true
+  name: final-project
+  destinations:
+    - namespace: final-project
+      server: https://kubernetes.default.svc
+  sourceRepos:
+    - https://gitlab.com/sela-tracks/1116/students/ofir/final-project
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+
+# The Argo CD Application you want
+application:
+  name: final-project-app
+  targetRevision: main
+  path: k8s               # path in your repo with manifests/helm
+  destNamespace: final-project
+
+# Sync policy defaults
+syncPolicy:
+  automated:
+    prune: true
+    selfHeal: true

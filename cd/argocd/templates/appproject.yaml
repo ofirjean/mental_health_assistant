@@ -1,0 +1,25 @@
+{{- if .Values.project.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: {{ .Values.project.name | quote }}
+  namespace: {{ .Values.argoNamespace | quote }}
+  labels:
+    {{- include "final-project-cd.labels" . | nindent 4 }}
+spec:
+  description: Project for final-project apps
+  destinations:
+  {{- range .Values.project.destinations }}
+  - namespace: {{ .namespace | quote }}
+    server: {{ .server | quote }}
+  {{- end }}
+  sourceRepos:
+  {{- range .Values.project.sourceRepos }}
+  - {{ . | quote }}
+  {{- end }}
+  clusterResourceWhitelist:
+  {{- range .Values.project.clusterResourceWhitelist }}
+  - group: {{ .group | quote }}
+    kind: {{ .kind | quote }}
+  {{- end }}
+{{- end }}

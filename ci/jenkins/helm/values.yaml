@@ -1,0 +1,30 @@
+fullnameOverride: jenkins
+
+controller:
+  image:
+    registry: docker.io
+    repository: jenkins/jenkins
+    tag: "2.516.2-jdk21"
+
+  serviceType: NodePort
+  servicePort: 8080
+  nodePort: 32010
+
+  # run Jenkins as non-root
+  containerSecurityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+  podSecurityContext:
+    fsGroup: 1000
+    fsGroupChangePolicy: "OnRootMismatch"
+
+  # rely on your recovered plugins; don’t download bundles each boot
+  installPlugins: []
+  installLatestPlugins: false
+  installLatestSpecifiedPlugins: false
+  overwritePlugins: false
+
+# reuse your recovered PVC; no storage created by the chart
+persistence:
+  enabled: true
+  existingClaim: jenkins
