@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hello
+  namespace: final-project
+data:
+  message: "ArgoCD is syncing"
