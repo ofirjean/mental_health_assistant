@@ -8,8 +8,7 @@ pipeline {
 apiVersion: v1
 kind: Pod
 metadata:
-  labels:
-    jenkins: agent
+  labels: { jenkins: agent }
 spec:
   serviceAccountName: jenkins
   volumes:
@@ -19,7 +18,7 @@ spec:
       emptyDir: {}
   containers:
     - name: jnlp
-      image: jenkins/inbound-agent:latest-jdk17   # docker hub (no ghcr auth needed)
+      image: jenkins/inbound-agent:latest-jdk17   # Docker Hub (pulls fine)
       imagePullPolicy: IfNotPresent
       volumeMounts:
         - name: workspace
@@ -59,13 +58,10 @@ spec:
     ansiColor('xterm')
     disableConcurrentBuilds()
     buildDiscarder(logRotator(numToKeepStr: '20'))
-    overrideIndexTriggers(true) // allow triggers{} in multibranch
+    overrideIndexTriggers(true)
   }
 
-  // Poll SCM every ~2 minutes (works in Multibranch thanks to overrideIndexTriggers)
-  triggers {
-    pollSCM('H/2 * * * *')
-  }
+  triggers { pollSCM('H/2 * * * *') }
 
   parameters {
     string(name: 'FORCE_TAG', defaultValue: '', description: 'Override image tag; leave empty to auto-generate on main')
@@ -74,41 +70,39 @@ spec:
   environment {
     DOCKER_REPO     = 'ofirjean/mental-health-assistant'
     VALUES_FILE     = 'app/helm/values-prod.yaml'
-    CRED_DOCKERHUB  = 'DockerHub'    // Jenkins cred ID (username+token)
-    CRED_GITHUB_PAT = 'github-pat'   // username+PAT
-    CRED_GITLAB_PAT = 'gitlab-pat'   // username+PAT
+    CRED_DOCKERHUB  = 'DockerHub'
+    CRED_GITHUB_PAT = 'github-pat'
+    CRED_GITLAB_PAT = 'gitlab-pat'
   }
 
   stages {
     stage('Checkout'){
       steps {
         checkout scm
+        // Ensure git exists in the default (builder) container BEFORE using it
         sh '''
           set -euo pipefail
+          if ! command -v git >/dev/null 2>&1; then
+            apk add --no-cache git
+          fi
           git config --global --add safe.directory "$PWD"
           git status -sb || true
         '''
       }
     }
 
-    // Ensure docker CLI exists and DinD is ready
+    // Install docker CLI and wait for DinD
     stage('Install tools') {
       steps {
         sh '''
           set -euo pipefail
           if ! command -v docker >/dev/null 2>&1; then
-            apk add --no-cache docker-cli git curl
+            apk add --no-cache docker-cli curl
           fi
-
-          # wait up to ~60s for Docker daemon in the dind sidecar
           for i in $(seq 1 30); do
-            if docker version >/dev/null 2>&1; then
-              break
-            fi
-            echo "Waiting for Docker daemon (attempt $i/30)..."
-            sleep 2
+            if docker version >/dev/null 2>&1; then break; fi
+            echo "Waiting for Docker daemon (attempt $i/30)..."; sleep 2
           done
-
           python --version
           docker version || true
         '''
@@ -123,14 +117,11 @@ spec:
           echo "Workspace: $PWD"
           ls -la
 
-          # Docker availability (non-fatal here)
           command -v docker || true
           docker version || { echo "Docker not ready yet (will try later)"; true; }
 
-          # Ensure values file exists
           test -f "$VALUES_FILE" || { echo "Missing $VALUES_FILE"; exit 3; }
 
-          # Git details
           git --version
           git remote -v
         '''
@@ -171,7 +162,6 @@ spec:
           if command -v yq >/dev/null 2>&1; then
             yq -i '.image.tag = env(TAG)' "$VALUES_FILE"
           else
-            # portable awk update inside the nearest top-level "image:" block
             awk -v tag="$TAG" '
               BEGIN{in_image=0}
               /^[[:space:]]*image:[[:space:]]*$/ {in_image=1; print; next}
@@ -197,12 +187,10 @@ spec:
             git add "$VALUES_FILE"
             git commit -m "ci: bump image tag to $TAG" || true
 
-            # Push to GitHub mirror using PAT as password
             git remote set-url origin "https://${GH_USER}:${GH_PAT}@github.com/ofirjean/mental_health_assistant"
             BRANCH="${BRANCH_NAME}"
             git push origin "HEAD:${BRANCH}"
 
-            # Optional: tag for traceability
             git tag -f "$TAG" || true
             git push origin --force "refs/tags/$TAG"
           '''
@@ -233,11 +221,7 @@ spec:
     always  {
       script {
         // If the agent never started, there may be no workspace; don't fail cleanup
-        try {
-          cleanWs deleteDirs: true, notFailBuild: true
-        } catch (err) {
-          echo "Skipping cleanWs (no workspace yet): ${err}"
-        }
+        try { cleanWs deleteDirs: true, notFailBuild: true } catch (err) { echo "Skipping cleanWs: ${err}" }
       }
     }
   }
