@@ -19,7 +19,7 @@ spec:
       emptyDir: {}
   containers:
     - name: jnlp
-      image: jenkins/inbound-agent:latest-jdk17
+      image: ghcr.io/jenkinsci/inbound-agent:latest-jdk17
       volumeMounts:
         - name: workspace
           mountPath: /home/jenkins/agent
@@ -226,9 +226,6 @@ spec:
   post {
     success { echo "Built & pushed ${env.DOCKER_REPO}:${env.TAG}" }
     failure { echo "Build failed on branch ${env.BRANCH_NAME ?: 'n/a'}." }
-    always  {
-      script {
-        try { cleanWs deleteDirs: true, notFailBuild: true } catch (err) { echo "Skipping cleanWs: ${err}" }
-      }
-    }
+    always  { cleanWs deleteDirs: true, notFailBuild: true }
+  }
 }
