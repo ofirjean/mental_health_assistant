@@ -19,10 +19,12 @@ spec:
       emptyDir: {}
   containers:
     - name: jnlp
-      image: ghcr.io/jenkinsci/inbound-agent:latest-jdk17
+      image: jenkins/inbound-agent:latest-jdk17   # docker hub (no ghcr auth needed)
+      imagePullPolicy: IfNotPresent
       volumeMounts:
         - name: workspace
           mountPath: /home/jenkins/agent
+
     - name: builder
       image: python:3.11-alpine
       command: ['sh','-c','cat']
@@ -33,8 +35,10 @@ spec:
       volumeMounts:
         - name: workspace
           mountPath: /home/jenkins/agent
+
     - name: dind
       image: docker:27-dind
+      imagePullPolicy: IfNotPresent
       securityContext:
         privileged: true
       env:
@@ -70,9 +74,9 @@ spec:
   environment {
     DOCKER_REPO     = 'ofirjean/mental-health-assistant'
     VALUES_FILE     = 'app/helm/values-prod.yaml'
-    CRED_DOCKERHUB  = 'DockerHub'   // Jenkins cred ID (Username + token)
-    CRED_GITHUB_PAT = 'github-pat'  // Username + PAT
-    CRED_GITLAB_PAT = 'gitlab-pat'  // Username + PAT
+    CRED_DOCKERHUB  = 'DockerHub'    // Jenkins cred ID (username+token)
+    CRED_GITHUB_PAT = 'github-pat'   // username+PAT
+    CRED_GITLAB_PAT = 'gitlab-pat'   // username+PAT
   }
 
   stages {
@@ -193,7 +197,7 @@ spec:
             git add "$VALUES_FILE"
             git commit -m "ci: bump image tag to $TAG" || true
 
-            # Push to GitHub using PAT as password
+            # Push to GitHub mirror using PAT as password
             git remote set-url origin "https://${GH_USER}:${GH_PAT}@github.com/ofirjean/mental_health_assistant"
             BRANCH="${BRANCH_NAME}"
             git push origin "HEAD:${BRANCH}"
@@ -226,6 +230,15 @@ spec:
   post {
     success { echo "Built & pushed ${env.DOCKER_REPO}:${env.TAG}" }
     failure { echo "Build failed on branch ${env.BRANCH_NAME ?: 'n/a'}." }
-    always  { cleanWs deleteDirs: true, notFailBuild: true }
+    always  {
+      script {
+        // If the agent never started, there may be no workspace; don't fail cleanup
+        try {
+          cleanWs deleteDirs: true, notFailBuild: true
+        } catch (err) {
+          echo "Skipping cleanWs (no workspace yet): ${err}"
+        }
+      }
+    }
   }
 }
