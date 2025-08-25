@@ -18,13 +18,35 @@ controller:
     fsGroup: 1000
     fsGroupChangePolicy: "OnRootMismatch"
 
+  # JVM/resources — speeds up page loads, reduces GC pauses
+  resources:
+    requests:
+      cpu: "1000m"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  javaOpts: >-
+    -Xms1g -Xmx2g
+    -XX:+UseG1GC
+    -XX:MaxGCPauseMillis=200
+    -Djenkins.install.runSetupWizard=false
+    -Dorg.csanchez.jenkins.plugins.kubernetes.pipeline.ContainerExecDecorator.enabled=true
+
   # rely on your recovered plugins; don’t download bundles each boot
   installPlugins: []
   installLatestPlugins: false
   installLatestSpecifiedPlugins: false
   overwritePlugins: false
 
-# reuse your recovered PVC; no storage created by the chart
+  # (optional but helpful for agents)
+  jenkinsUrl: "http://jenkins.jenkins.svc.cluster.local:8080/"
+
+# keep the JNLP service for inbound agents
+agent:
+  enabled: true
+
+# reuse your recovered PVC; the chart won’t create new storage
 persistence:
   enabled: true
   existingClaim: jenkins
