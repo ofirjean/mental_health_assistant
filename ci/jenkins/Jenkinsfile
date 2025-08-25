@@ -81,7 +81,7 @@ spec:
         checkout scm
         sh '''
           set -euo pipefail
-          git config --global --add safe.directory "$PWD"
+          git config --add safe.directory "$PWD"
           git status -sb || true
         '''
       }
@@ -92,21 +92,30 @@ spec:
       steps {
         sh '''
           set -euo pipefail
-          if ! command -v docker >/dev/null 2>&1; then
-            apk add --no-cache docker-cli git curl
-          fi
+          # Install required tools
+          apk update
+          apk add --no-cache docker-cli git curl yq
 
-          # wait up to ~60s for Docker daemon in the dind sidecar
-          for i in $(seq 1 30); do
+          # Wait up to ~2 minutes for Docker daemon in the dind sidecar
+          echo "Waiting for Docker daemon to be ready..."
+          for i in $(seq 1 60); do
             if docker version >/dev/null 2>&1; then
+              echo "Docker daemon is ready!"
               break
             fi
-            echo "Waiting for Docker daemon (attempt $i/30)..."
+            if [ $i -eq 60 ]; then
+              echo "Docker daemon failed to start after 2 minutes"
+              exit 1
+            fi
+            echo "Waiting for Docker daemon (attempt $i/60)..."
             sleep 2
           done
 
+          echo "Tool versions:"
           python --version
-          docker version || true
+          docker version
+          git --version
+          yq --version
         '''
       }
     }
@@ -119,16 +128,18 @@ spec:
           echo "Workspace: $PWD"
           ls -la
 
-          # Docker availability (non-fatal here)
-          command -v docker || true
-          docker version || { echo "Docker not ready yet (will try later)"; true; }
+          # Verify Docker is working
+          docker info
 
           # Ensure values file exists
-          test -f "$VALUES_FILE" || { echo "Missing $VALUES_FILE"; exit 3; }
+          if [ ! -f "$VALUES_FILE" ]; then
+            echo "Error: Missing $VALUES_FILE"
+            exit 1
+          fi
 
           # Git details
-          git --version
           git remote -v
+          echo "Current commit: $(git rev-parse HEAD)"
         '''
       }
     }
@@ -137,23 +148,39 @@ spec:
       when { branch 'main' }
       steps {
         script {
-          env.TAG = params.FORCE_TAG?.trim() ? params.FORCE_TAG.trim() : "v0.1.${env.BUILD_NUMBER}"
+          if (params.FORCE_TAG?.trim()) {
+            env.TAG = params.FORCE_TAG.trim()
+            echo "Using forced tag: ${env.TAG}"
+          } else {
+            env.TAG = "v0.1.${env.BUILD_NUMBER}"
+            echo "Using auto-generated tag: ${env.TAG}"
+          }
         }
-        echo "Using TAG=${env.TAG}"
       }
     }
 
     stage('Build & Push Image'){
       when { branch 'main' }
       steps {
-        echo "Using Docker Hub credential ID: ${CRED_DOCKERHUB}"
+        echo "Building and pushing image with tag: ${env.TAG}"
         withCredentials([usernamePassword(credentialsId: env.CRED_DOCKERHUB, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
           sh '''
             set -euo pipefail
+            
+            # Login to Docker Hub
             echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
+            
+            # Build image
+            echo "Building image: $DOCKER_REPO:$TAG"
             docker build -t "$DOCKER_REPO:$TAG" app
-            docker push  "$DOCKER_REPO:$TAG"
-            docker logout || true
+            
+            # Push image
+            echo "Pushing image: $DOCKER_REPO:$TAG"
+            docker push "$DOCKER_REPO:$TAG"
+            
+            # Cleanup
+            docker logout
+            echo "Successfully built and pushed $DOCKER_REPO:$TAG"
           '''
         }
       }
@@ -164,59 +191,85 @@ spec:
       steps {
         sh '''
           set -euo pipefail
-          if command -v yq >/dev/null 2>&1; then
-            yq -i '.image.tag = env(TAG)' "$VALUES_FILE"
-          else
-            # portable awk update inside the nearest top-level "image:" block
-            awk -v tag="$TAG" '
-              BEGIN{in_image=0}
-              /^[[:space:]]*image:[[:space:]]*$/ {in_image=1; print; next}
-              /^[^[:space:]]/ {in_image=0}
-              in_image && /^[[:space:]]*tag:[[:space:]]*/ { sub(/tag:.*/, "tag: " tag); print; next }
-              {print}
-            ' "$VALUES_FILE" > "$VALUES_FILE.tmp" && mv "$VALUES_FILE.tmp" "$VALUES_FILE"
-          fi
-          echo "==== values snippet ===="
-          grep -nE '^[[:space:]]*image:|^[[:space:]]*tag:' "$VALUES_FILE" | sed -n '1,120p'
+          echo "Updating Helm values file with tag: $TAG"
+          
+          # Create backup
+          cp "$VALUES_FILE" "$VALUES_FILE.backup"
+          
+          # Update using yq (now guaranteed to be installed)
+          yq eval '.image.tag = env(TAG)' -i "$VALUES_FILE"
+          
+          echo "==== Updated values file snippet ===="
+          grep -nE '^[[:space:]]*image:|^[[:space:]]*tag:' "$VALUES_FILE" | head -10
+          
+          echo "==== Diff from backup ===="
+          diff "$VALUES_FILE.backup" "$VALUES_FILE" || true
         '''
       }
     }
 
-    stage('Commit & Push to GitHub (PAT)'){
+    stage('Commit & Push to GitHub'){
       when { branch 'main' }
       steps {
         withCredentials([usernamePassword(credentialsId: env.CRED_GITHUB_PAT, usernameVariable: 'GH_USER', passwordVariable: 'GH_PAT')]) {
           sh '''
             set -euo pipefail
+            
+            # Configure git for this repository only
             git config user.name  "Jenkins CI"
-            git config user.email "ci@local"
+            git config user.email "ci@jenkins.local"
+            
+            # Check if there are changes to commit
+            if git diff --quiet "$VALUES_FILE"; then
+              echo "No changes to commit in $VALUES_FILE"
+              exit 0
+            fi
+            
+            # Add and commit changes
             git add "$VALUES_FILE"
-            git commit -m "ci: bump image tag to $TAG" || true
-
-            # Push to GitHub using PAT as password
-            git remote set-url origin "https://${GH_USER}:${GH_PAT}@github.com/ofirjean/mental_health_assistant"
+            git commit -m "ci: bump image tag to $TAG [skip ci]"
+            
+            # Configure remote for GitHub
+            git remote set-url origin "https://${GH_USER}:${GH_PAT}@github.com/ofirjean/mental_health_assistant.git"
+            
+            # Push changes
             BRANCH="${BRANCH_NAME}"
+            echo "Pushing to GitHub branch: $BRANCH"
             git push origin "HEAD:${BRANCH}"
-
-            # Optional: tag for traceability
-            git tag -f "$TAG" || true
-            git push origin --force "refs/tags/$TAG"
+            
+            # Create and push tag
+            echo "Creating and pushing tag: $TAG"
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "refs/tags/$TAG"
+            
+            echo "Successfully pushed changes and tag to GitHub"
           '''
         }
       }
     }
 
-    stage('Mirror to GitLab (PAT)'){
+    stage('Mirror to GitLab'){
       when { branch 'main' }
       steps {
         withCredentials([usernamePassword(credentialsId: env.CRED_GITLAB_PAT, usernameVariable: 'GL_USER', passwordVariable: 'GL_PAT')]) {
           sh '''
             set -euo pipefail
+            
+            # Remove existing gitlab remote if it exists
             git remote remove gitlab 2>/dev/null || true
-            git remote add    gitlab "https://${GL_USER}:${GL_PAT}@gitlab.com/sela-tracks/1116/students/ofir/final-project"
+            
+            # Add GitLab remote
+            git remote add gitlab "https://${GL_USER}:${GL_PAT}@gitlab.com/sela-tracks/1116/students/ofir/final-project.git"
+            
+            # Push branch and tag to GitLab
             BRANCH="${BRANCH_NAME}"
+            echo "Mirroring to GitLab branch: $BRANCH"
             git push gitlab "HEAD:${BRANCH}"
+            
+            echo "Pushing tag to GitLab: $TAG"
             git push gitlab "refs/tags/$TAG"
+            
+            echo "Successfully mirrored to GitLab"
           '''
         }
       }
@@ -224,11 +277,26 @@ spec:
   }
 
   post {
-    success { echo "Built & pushed ${env.DOCKER_REPO}:${env.TAG}" }
-    failure { echo "Build failed on branch ${env.BRANCH_NAME ?: 'n/a'}." }
-    always  {
+    success { 
       script {
-        try { cleanWs deleteDirs: true, notFailBuild: true } catch (err) { echo "Skipping cleanWs: ${err}" }
+        if (env.TAG) {
+          echo "✅ Successfully built & pushed ${env.DOCKER_REPO}:${env.TAG}"
+        } else {
+          echo "✅ Pipeline completed successfully"
+        }
       }
     }
+    failure { 
+      echo "❌ Build failed on branch ${env.BRANCH_NAME ?: 'unknown'}"
+    }
+    always {
+      script {
+        try { 
+          cleanWs deleteDirs: true, notFailBuild: true 
+        } catch (Exception err) { 
+          echo "⚠️  Workspace cleanup skipped: ${err.message}"
+        }
+      }
+    }
+  }
 }
