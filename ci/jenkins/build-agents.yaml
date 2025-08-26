@@ -5,6 +5,7 @@ metadata:
     jenkins: agent
 spec:
   serviceAccountName: jenkins
+
   volumes:
     - name: workspace
       emptyDir: {}
@@ -20,9 +21,8 @@ spec:
 
     - name: builder
       image: python:3.11-alpine
-      securityContext:
-        runAsUser: 0          # ensure root so apk can install
-      command: ['sh', '-lc', 'apk add --no-cache git docker-cli bash coreutils && sleep infinity']
+      command: ["sh","-c","apk add --no-cache git docker-cli bash coreutils >/dev/null && sleep infinity"]
+      tty: true
       env:
         - name: DOCKER_HOST
           value: tcp://localhost:2375
@@ -43,3 +43,5 @@ spec:
       volumeMounts:
         - name: docker-graph
           mountPath: /var/lib/docker
+        - name: workspace
+          mountPath: /home/jenkins/agent

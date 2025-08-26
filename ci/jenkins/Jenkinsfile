@@ -6,41 +6,31 @@ pipeline {
       yamlFile 'ci/jenkins/build-agents.yaml'
     }
   }
-
   options {
-    skipDefaultCheckout(true)    // keep this
-    // removed timestamps() and ansiColor('xterm') from here
+    skipDefaultCheckout(true)
   }
-
   environment {
     IMAGE    = 'ofirjean/mental-health-assistant'
     REGISTRY = 'docker.io'
   }
-
   stages {
     stage('Checkout') {
       steps {
         container('builder') {
-          timestamps {
-            ansiColor('xterm') {
-              checkout scm
-              sh '''
-                set -euo pipefail
-                git --version
-                docker version || true
-                python3 --version || true
-                echo "Branch: ${BRANCH_NAME:-unknown}"
-                echo "Commit: ${GIT_COMMIT:-unknown}"
-                ls -la
-              '''
-            }
-          }
+          checkout scm
+          sh '''
+            set -euo pipefail
+            git --version
+            docker version || true
+            python3 --version || true
+            echo "Branch: ${BRANCH_NAME:-unknown}"
+            echo "Commit: ${GIT_COMMIT:-unknown}"
+            ls -la
+          '''
         }
       }
     }
-    // ... your remaining stages ...
   }
-
   post {
     always {
       echo "Build finished with status: ${currentBuild.currentResult}"
