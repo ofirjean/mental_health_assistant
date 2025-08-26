@@ -1,52 +1,13 @@
-fullnameOverride: jenkins
-
+USER-SUPPLIED VALUES:
 controller:
-  image:
-    registry: docker.io
-    repository: jenkins/jenkins
-    tag: "2.516.2-jdk21"
-
-  serviceType: NodePort
-  servicePort: 8080
+  javaOpts: -Djenkins.install.runSetupWizard=false
   nodePort: 32010
-
-  # run Jenkins as non-root
-  containerSecurityContext:
-    runAsUser: 1000
-    runAsGroup: 1000
-  podSecurityContext:
-    fsGroup: 1000
-    fsGroupChangePolicy: "OnRootMismatch"
-
-  # JVM/resources — speeds up page loads, reduces GC pauses
+  persistence:
+    enabled: true
   resources:
     requests:
-      cpu: "1000m"
-      memory: "2Gi"
-    limits:
-      cpu: "2"
-      memory: "4Gi"
-  javaOpts: >-
-    -Xms1g -Xmx2g
-    -XX:+UseG1GC
-    -XX:MaxGCPauseMillis=200
-    -Djenkins.install.runSetupWizard=false
-    -Dorg.csanchez.jenkins.plugins.kubernetes.pipeline.ContainerExecDecorator.enabled=true
-
-  # rely on your recovered plugins; don’t download bundles each boot
-  installPlugins: []
-  installLatestPlugins: false
-  installLatestSpecifiedPlugins: false
-  overwritePlugins: false
-
-  # (optional but helpful for agents)
-  jenkinsUrl: "http://jenkins.jenkins.svc.cluster.local:8080/"
-
-# keep the JNLP service for inbound agents
-agent:
-  enabled: true
-
-# reuse your recovered PVC; the chart won’t create new storage
-persistence:
-  enabled: true
-  existingClaim: jenkins
+      cpu: 500m
+      memory: 1Gi
+  servicePort: 8080
+  serviceType: NodePort
+  targetPort: 8080
