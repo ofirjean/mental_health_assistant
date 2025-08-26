@@ -5,9 +5,6 @@ metadata:
     jenkins: agent
 spec:
   serviceAccountName: jenkins
-  nodeSelector:
-    kubernetes.io/os: linux
-
   volumes:
     - name: workspace
       emptyDir: {}
@@ -17,19 +14,15 @@ spec:
   containers:
     - name: jnlp
       image: jenkins/inbound-agent:latest-jdk17
-      resources:
-        requests:
-          memory: "256Mi"
-          cpu: "100m"
       volumeMounts:
         - name: workspace
           mountPath: /home/jenkins/agent
 
     - name: builder
       image: python:3.11-alpine
-      # Preinstall tools, then stay up for Jenkins steps
-      command: ['sh','-c','apk add --no-cache git docker-cli bash coreutils >/dev/null && sleep infinity']
-      tty: true
+      securityContext:
+        runAsUser: 0          # ensure root so apk can install
+      command: ['sh', '-lc', 'apk add --no-cache git docker-cli bash coreutils && sleep infinity']
       env:
         - name: DOCKER_HOST
           value: tcp://localhost:2375
