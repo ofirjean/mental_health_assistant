@@ -1,3 +1,4 @@
+# ci/jenkins/build-agents.yaml
 apiVersion: v1
 kind: Pod
 metadata:
@@ -5,24 +6,20 @@ metadata:
     jenkins: agent
 spec:
   serviceAccountName: jenkins
-
   volumes:
     - name: workspace
       emptyDir: {}
     - name: docker-graph
       emptyDir: {}
-
   containers:
     - name: jnlp
       image: ghcr.io/jenkinsci/inbound-agent:latest-jdk17
       volumeMounts:
         - name: workspace
           mountPath: /home/jenkins/agent
-
     - name: builder
       image: python:3.11-alpine
-      # Install tools immediately, then stay alive for Jenkins steps
-      command: ['sh', '-c', 'apk add --no-cache git docker-cli bash coreutils >/dev/null && sleep infinity']
+      command: ['sh','-c','apk add --no-cache git docker-cli bash coreutils >/dev/null && sleep infinity']
       tty: true
       env:
         - name: DOCKER_HOST
@@ -30,7 +27,6 @@ spec:
       volumeMounts:
         - name: workspace
           mountPath: /home/jenkins/agent
-
     - name: dind
       image: docker:27-dind
       securityContext:
