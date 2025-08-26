@@ -1,84 +1,112 @@
 pipeline {
-  agent any  // runs on the controller for simplicity; switch to agents later if you want
+  agent {
+    kubernetes {
+      label 'k8s-yaml'
+      defaultContainer 'builder'
+      yamlFile 'ci/jenkins/build-agents.yaml'   // <— uses your file
+    }
+  }
 
   options {
-    skipDefaultCheckout(true)      // we'll do an explicit 'checkout scm'
-    timestamps()
+    skipDefaultCheckout(true)
+    timestamps()           // OK if Timestamper installed
+    ansiColor('xterm')     // OK if AnsiColor installed
+  }
+
+  environment {
+    IMAGE    = 'ofirjean/mental-health-assistant'
+    REGISTRY = 'docker.io'
   }
 
   stages {
     stage('Checkout') {
       steps {
         checkout scm
-        sh 'echo "Branch: $BRANCH_NAME  Commit: $(git rev-parse --short HEAD)"'
+        container('builder') {
+          sh '''
+            set -euo pipefail
+            # python:3.11-alpine does NOT include git or docker-cli — install them
+            apk add --no-cache git docker-cli bash coreutils >/dev/null
+            git config --add safe.directory "$PWD"
+            echo "Branch: ${BRANCH_NAME:-unknown}"
+            echo "Commit: ${GIT_COMMIT:-unknown}"
+            ls -la
+          '''
+        }
       }
     }
 
-    stage('Sanity') {
+    stage('Sanity checks') {
       steps {
-        sh '''
-          echo "Workspace: $PWD"
-          echo "Files at top-level:"
-          ls -la || true
-        '''
+        container('builder') {
+          sh '''
+            git --version || true
+            docker version || true
+            python3 --version || true
+          '''
+        }
       }
     }
 
-    // ----- Optional auto-detected build/test steps (will NO-OP if files are missing) -----
-    stage('Python tests (if any)') {
-      when { expression { fileExists('requirements.txt') } }
+    stage('Set Tag') {
       steps {
-        sh '''
-          python3 -V || true
-          python3 -m venv .venv || true
-          . .venv/bin/activate || true
-          pip install -U pip || true
-          pip install -r requirements.txt || true
-          if [ -f pytest.ini ] || [ -d tests ]; then
-            pytest -q --maxfail=1 --disable-warnings || true
-          else
-            echo "No pytest config/tests found; skipping."
-          fi
-        '''
+        script {
+          env.SHORT_SHA = (env.GIT_COMMIT ?: "manual").take(7)
+          env.TAG = "v0.1.${env.BUILD_NUMBER}-${env.SHORT_SHA}"
+          echo "TAG=${env.TAG}"
+        }
       }
     }
 
-    stage('Node tests (if any)') {
-      when { expression { fileExists('package.json') } }
+    stage('Build & Push Image') {
       steps {
-        sh '''
-          command -v node && node -v || true
-          command -v npm && npm -v || true
-          npm ci || npm install
-          npm test || echo "No test script; skipping."
-        '''
+        container('builder') {
+          withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+            sh '''
+              echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin $REGISTRY
+              docker build -t "$IMAGE:$TAG" .
+              docker push "$IMAGE:$TAG"
+            '''
+          }
+        }
       }
     }
 
-    stage('Maven build (if any)') {
-      when { expression { fileExists('pom.xml') } }
+    stage('Bump Helm image.tag (if repo has values)') {
+      when { expression { fileExists('ci/jenkins/helm/values.yaml') } }
       steps {
-        sh '''
-          mvn -version || true
-          mvn -B -DskipTests package || true
-        '''
+        container('builder') {
+          sh '''
+            sed -i "s#\\(image:\\s*\\)ofirjean/mental-health-assistant:.*#\\1ofirjean/mental-health-assistant:${TAG}#" ci/jenkins/helm/values.yaml || true
+            echo "values.yaml lines with image after bump:"
+            grep -n "image:" ci/jenkins/helm/values.yaml || true
+          '''
+        }
       }
     }
-    // --------------------------------------------------------------------------------------
+
+    stage('Commit & Push to GitLab') {
+      when { expression { fileExists('ci/jenkins/helm/values.yaml') } }
+      steps {
+        container('builder') {
+          withCredentials([usernamePassword(credentialsId: 'gitlab', usernameVariable: 'GL_USER', passwordVariable: 'GL_TOKEN')]) {
+            sh '''
+              git config user.email "ci-bot@example.com"
+              git config user.name  "CI Bot"
+              git add ci/jenkins/helm/values.yaml || true
+              git commit -m "ci: bump image tag to ${TAG}" || echo "No changes to commit"
+              git push https://${GL_USER}:${GL_TOKEN}@gitlab.com/sela-tracks/1116/students/ofir/final-project HEAD:${BRANCH_NAME}
+            '''
+          }
+        }
+      }
+    }
   }
 
   post {
     always {
-      // Collect any JUnit reports if they exist
-      script {
-        if (fileExists('target/surefire-reports')) {
-          junit 'target/surefire-reports/*.xml'
-        }
-        if (fileExists('junit.xml')) {
-          junit 'junit.xml'
-        }
-      }
-      archiveArtifacts artifacts: '**/*-reports/**, target/*.jar', allowEmptyArchive: true
+      echo "Build finished with status: ${currentBuild.currentResult}"
+      // (No cleanWs() to avoid missing plugin error)
     }
   }
 }
