@@ -191,16 +191,12 @@ def readyz():
 # -----------------------
 @app.route('/')
 def index():
+    """Main index route that serves as the homepage"""
     try:
         return render_template('index.html')
     except TemplateNotFound:
         # Safe fallback so "/" never 500s during probes or missing template
         return "Welcome to Mental Health Assistant", 200
-
-# Alias so templates using url_for('home') don't break
-@app.route('/home')
-def home():
-    return redirect(url_for('index'))
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -415,7 +411,3 @@ if __name__ == '__main__':
     port = int(os.getenv("PORT", "5000"))
     debug = os.getenv("FLASK_DEBUG", "0") == "1"  # default off for k8s
     app.run(host="0.0.0.0", port=port, debug=debug)
-from flask import redirect, url_for
-@app.route("/", endpoint="home")
-def home():
-    return redirect(url_for("profile"))
