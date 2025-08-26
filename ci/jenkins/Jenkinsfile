@@ -8,7 +8,7 @@ pipeline {
   }
 
   options {
-    skipDefaultCheckout(true)   // <- important
+    skipDefaultCheckout(true)    // ensure Jenkins doesn't do an extra checkout elsewhere
     timestamps()
     ansiColor('xterm')
   }
@@ -93,7 +93,7 @@ pipeline {
   post {
     always {
       echo "Build finished with status: ${currentBuild.currentResult}"
-      // cleanWs() removed (install Workspace Cleanup plugin if you want it back)
+      // cleanWs() removed; add it only after installing the Workspace Cleanup plugin
     }
   }
 }
