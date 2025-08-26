@@ -40,3 +40,4 @@ app/.env
 values.local.yaml
 cd/argocd/.env
 ci/jenkins/secrets/
+jenkins-home-backup.tgz
