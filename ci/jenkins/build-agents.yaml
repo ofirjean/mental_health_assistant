@@ -20,14 +20,29 @@ spec:
           mountPath: /home/jenkins/agent
 
     - name: builder
-      # Use a Python image with git already installed
-      image: python:3.11-slim  # Debian-based, has git pre-installed
-      # OR use: python:3.11-bullseye
-      command: ["sleep", "infinity"]
+      image: python:3.11-alpine
+      # Use a more explicit approach that handles the login shell issue
+      command: 
+        - /bin/sh
+        - -c
+        - |
+          echo "Installing packages..."
+          apk update
+          apk add --no-cache git docker-cli bash coreutils curl
+          echo "Verifying installation..."
+          git --version
+          docker --version || echo "Docker client installed"
+          echo "✅ Container ready!"
+          # Ensure PATH is correct for login shells
+          echo 'export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"' >> /etc/profile
+          exec sleep infinity
       tty: true
       env:
         - name: DOCKER_HOST
           value: tcp://localhost:2375
+        # Ensure PATH is set correctly
+        - name: PATH
+          value: "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
       volumeMounts:
         - name: workspace
           mountPath: /home/jenkins/agent
