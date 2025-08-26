@@ -32,55 +32,7 @@ pipeline {
         }
       }
     }
-    stage('Set Tag') {
-      steps {
-        script {
-          env.SHORT_SHA = (env.GIT_COMMIT ?: "manual").take(7)
-          env.TAG = "v0.1.${env.BUILD_NUMBER}-${env.SHORT_SHA}"
-          echo "TAG=${env.TAG}"
-        }
-      }
-    }
-    stage('Build & Push Image') {
-      steps {
-        container('builder') {
-          withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-            sh '''
-              echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin $REGISTRY
-              docker build -t "$IMAGE:$TAG" .
-              docker push "$IMAGE:$TAG"
-            '''
-          }
-        }
-      }
-    }
-    stage('Bump Helm image.tag (if file exists)') {
-      when { expression { fileExists('ci/jenkins/helm/values.yaml') } }
-      steps {
-        container('builder') {
-          sh '''
-            sed -i "s#\\(image:\\s*\\)ofirjean/mental-health-assistant:.*#\\1ofirjean/mental-health-assistant:${TAG}#" ci/jenkins/helm/values.yaml || true
-            grep -n "image:" ci/jenkins/helm/values.yaml || true
-          '''
-        }
-      }
-    }
-    stage('Commit & Push to GitLab') {
-      when { expression { fileExists('ci/jenkins/helm/values.yaml') } }
-      steps {
-        container('builder') {
-          withCredentials([usernamePassword(credentialsId: 'gitlab', usernameVariable: 'GL_USER', passwordVariable: 'GL_TOKEN')]) {
-            sh '''
-              git config user.email "ci-bot@example.com"
-              git config user.name  "CI Bot"
-              git add ci/jenkins/helm/values.yaml || true
-              git commit -m "ci: bump image tag to ${TAG}" || echo "No changes to commit"
-              git push https://${GL_USER}:${GL_TOKEN}@gitlab.com/sela-tracks/1116/students/ofir/final-project HEAD:${BRANCH_NAME}
-            '''
-          }
-        }
-      }
-    }
+    // ... your remaining stages ...
   }
   post {
     always {
