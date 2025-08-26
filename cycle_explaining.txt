@@ -86,3 +86,31 @@ Devs work on app repo
 Ops/Infra team manages manifests in GitOps repo
 
 Reliability → ArgoCD ensures the cluster state always matches Git.
+
+
+   ┌───────────────┐        ┌───────────────┐
+   │   Developer   │        │   GitLab Repo │
+   │   (push code) │───────▶│  (source of   │
+   └───────────────┘        │    truth)     │
+                            └──────┬────────┘
+                                   │
+                                   │
+                           ┌───────▼───────┐
+                           │   Jenkins CI  │
+                           │  (build, test │
+                           │  push image,  │
+                           │ update Helm)  │
+                           └───────┬───────┘
+                                   │
+          ┌────────────────────────┼────────────────────────┐
+          │                        │                        │
+   ┌──────▼───────┐         ┌──────▼───────┐         ┌──────▼───────┐
+   │  Docker Hub  │         │   GitLab     │         │   ArgoCD     │
+   │ (images)     │         │ (Helm update)│         │ (CD syncs)   │
+   └──────────────┘         └──────────────┘         └──────┬───────┘
+                                                             │
+                                                    ┌────────▼────────┐
+                                                    │   Kubernetes    │
+                                                    │ (Pods: Flask +  │
+                                                    │   MongoDB)      │
+                                                    └─────────────────┘
