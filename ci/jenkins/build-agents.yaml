@@ -20,8 +20,10 @@ spec:
           mountPath: /home/jenkins/agent
 
     - name: builder
-      image: python:3.11-alpine
-      command: ["sh","-c","apk add --no-cache git docker-cli bash coreutils >/dev/null && sleep infinity"]
+      # Use a Python image with git already installed
+      image: python:3.11-slim  # Debian-based, has git pre-installed
+      # OR use: python:3.11-bullseye
+      command: ["sleep", "infinity"]
       tty: true
       env:
         - name: DOCKER_HOST
