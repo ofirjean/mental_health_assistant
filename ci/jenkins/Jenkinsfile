@@ -8,9 +8,9 @@ pipeline {
   }
 
   options {
-    skipDefaultCheckout(true)
-    timestamps()        // ok if Timestamper is installed
-    ansiColor('xterm')  // ok if AnsiColor is installed
+    skipDefaultCheckout(true)   // <- important
+    timestamps()
+    ansiColor('xterm')
   }
 
   environment {
@@ -21,27 +21,16 @@ pipeline {
   stages {
     stage('Checkout') {
       steps {
-        checkout scm
         container('builder') {
+          checkout scm
           sh '''
             set -euo pipefail
-            # Install tools BEFORE using git
-            apk add --no-cache git docker-cli bash coreutils >/dev/null
+            git --version
+            docker version || true
+            python3 --version || true
             echo "Branch: ${BRANCH_NAME:-unknown}"
             echo "Commit: ${GIT_COMMIT:-unknown}"
             ls -la
-          '''
-        }
-      }
-    }
-
-    stage('Sanity checks') {
-      steps {
-        container('builder') {
-          sh '''
-            git --version || true
-            docker version || true
-            python3 --version || true
           '''
         }
       }
@@ -71,13 +60,12 @@ pipeline {
       }
     }
 
-    stage('Bump Helm image.tag (if repo has values)') {
+    stage('Bump Helm image.tag (if file exists)') {
       when { expression { fileExists('ci/jenkins/helm/values.yaml') } }
       steps {
         container('builder') {
           sh '''
             sed -i "s#\\(image:\\s*\\)ofirjean/mental-health-assistant:.*#\\1ofirjean/mental-health-assistant:${TAG}#" ci/jenkins/helm/values.yaml || true
-            echo "values.yaml lines with image after bump:"
             grep -n "image:" ci/jenkins/helm/values.yaml || true
           '''
         }
@@ -92,7 +80,6 @@ pipeline {
             sh '''
               git config user.email "ci-bot@example.com"
               git config user.name  "CI Bot"
-              git config --global --add safe.directory "$PWD"
               git add ci/jenkins/helm/values.yaml || true
               git commit -m "ci: bump image tag to ${TAG}" || echo "No changes to commit"
               git push https://${GL_USER}:${GL_TOKEN}@gitlab.com/sela-tracks/1116/students/ofir/final-project HEAD:${BRANCH_NAME}
@@ -106,7 +93,7 @@ pipeline {
   post {
     always {
       echo "Build finished with status: ${currentBuild.currentResult}"
-      // cleanWs() removed; add it back only after installing the Workspace Cleanup plugin
+      // cleanWs() removed (install Workspace Cleanup plugin if you want it back)
     }
   }
 }
