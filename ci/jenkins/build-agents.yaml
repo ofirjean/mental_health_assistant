@@ -21,28 +21,19 @@ spec:
 
     - name: builder
       image: python:3.11-alpine
-      # Use a more explicit approach that handles the login shell issue
       command: 
         - /bin/sh
         - -c
         - |
-          echo "Installing packages..."
+          # minimal fix: install git and ensure PATH
           apk update
-          apk add --no-cache git docker-cli bash coreutils curl
-          echo "Verifying installation..."
-          git --version
-          docker --version || echo "Docker client installed"
-          echo "✅ Container ready!"
-          # Ensure PATH is correct for login shells
-          echo 'export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"' >> /etc/profile
+          apk add --no-cache git
+          export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
           exec sleep infinity
       tty: true
       env:
         - name: DOCKER_HOST
           value: tcp://localhost:2375
-        # Ensure PATH is set correctly
-        - name: PATH
-          value: "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
       volumeMounts:
         - name: workspace
           mountPath: /home/jenkins/agent
