@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_CREDENTIALS = credentials('dockerhub-creds')  // Jenkins credentials ID
+        DOCKERHUB_CREDENTIALS = credentials('DockerHub')  // Jenkins credentials ID
         DOCKERHUB_REPO = "ofirjean/mental_health_assistant"
         APP_NAME = "flask-app"   // must match Deployment name in your Helm chart
         HELM_RELEASE = "mha-release"
