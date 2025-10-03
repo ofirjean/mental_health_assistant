@@ -1,37 +1,31 @@
-fullnameOverride: jenkins
+image:
+  repository: ofirjean/mental-health-assistant
+  tag: v0.0.0-local   # Jenkins will bump this each build
+  pullPolicy: IfNotPresent
 
-controller:
-  image:
-    registry: docker.io
-    repository: jenkins/jenkins
-    tag: "2.516.2-jdk21"
+service:
+  type: NodePort
+  port: 80
+  targetPort: 5000
+  nodePort: 30080
 
-  serviceType: NodePort
-  servicePort: 8080
-  nodePort: 32010
+env:
+  GEMINI_MODEL: "gemini-1.5-flash"
 
-  # run as non-root normally
-  containerSecurityContext:
-    runAsUser: 1000
-    runAsGroup: 1000
-  podSecurityContext:
-    fsGroup: 1000
-    fsGroupChangePolicy: "OnRootMismatch"
+secret:
+  SECRET_KEY: "0dda2fec75c2b1a4ebf1795c96f9ff405a149f2e87932b26e99327f521037dd6"
+  MONGO_URI: "mongodb://mongo:27017/mental_health_db"
+  GEMINI_API_KEY: ""
+  GOOGLE_API_KEY: ""
+  WTF_CSRF_SECRET_KEY: ""
+  PORT: "5000"
+  FLASK_DEBUG: "0"
 
-  # one-time safety net to fix perms on recovered /var/jenkins_home
-  extraInitContainers: |
-    - name: fix-perms
-      image: alpine:3.19
-      command: ["/bin/sh","-lc","chown -R 1000:1000 /var/jenkins_home || true; chmod -R g+rwX /var/jenkins_home || true"]
-      securityContext:
-        runAsUser: 0
-      volumeMounts:
-        - name: jenkins-home
-          mountPath: /var/jenkins_home
+mongo:
+  image: "mongo:8.0"
+  servicePort: 27017
+  storage: "2Gi"
 
-  persistence:
-    enabled: true
-    existingClaim: jenkins   # <-- your recovered PVC
-
-agent:
+sanityTest:
   enabled: true
+  image: curlimages/curl:8.10.0
