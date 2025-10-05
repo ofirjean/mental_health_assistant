@@ -21,26 +21,27 @@ spec:
 
     - name: builder
       image: python:3.11-alpine
-      # Use a more explicit approach that handles the login shell issue
-      command: 
+      command:
         - /bin/sh
         - -c
         - |
           echo "Installing packages..."
           apk update
-          apk add --no-cache git docker-cli bash coreutils curl
-          echo "Verifying installation..."
-          git --version
-          docker --version || echo "Docker client installed"
-          echo "✅ Container ready!"
-          # Ensure PATH is correct for login shells
-          echo 'export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"' >> /etc/profile
+          apk add --no-cache git docker-cli bash coreutils curl wget tar
+          
+          echo "Installing Helm..."
+          wget https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz
+          tar -zxvf helm-v3.15.2-linux-amd64.tar.gz
+          mv linux-amd64/helm /usr/local/bin/helm
+          chmod +x /usr/local/bin/helm
+          helm version
+
+          echo "✅ Builder container ready!"
           exec sleep infinity
       tty: true
       env:
         - name: DOCKER_HOST
           value: tcp://localhost:2375
-        # Ensure PATH is set correctly
         - name: PATH
           value: "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
       volumeMounts:
