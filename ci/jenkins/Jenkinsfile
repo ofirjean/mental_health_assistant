@@ -1,133 +1,168 @@
 pipeline {
-    agent any
+  agent {
+    kubernetes {
+      label 'k8s-yaml'
+      defaultContainer 'builder'
+      yamlFile 'ci/jenkins/build-agents.yaml'
+    }
+  }
 
-    environment {
-        DOCKERHUB_CREDENTIALS = credentials('DockerHub')  // Jenkins credentials ID
-        DOCKERHUB_REPO = "ofirjean/mental_health_assistant"
-        APP_NAME = "flask-app"   // must match Deployment name in your Helm chart
-        HELM_RELEASE = "mha-release"
-        NAMESPACE = "default"
-        DISCORD_WEBHOOK = credentials('discord-webhook')  // Jenkins Secret Text
+  options { skipDefaultCheckout(true) }
+
+  environment {
+    // credentials
+    DOCKERHUB_CREDENTIALS = credentials('DockerHub')
+    DISCORD_WEBHOOK       = credentials('discord-webhook')
+
+    // repo and helm info
+    DOCKERHUB_REPO = 'ofirjean/mental_health_assistant'
+    HELM_RELEASE   = 'mha-release'
+    NAMESPACE      = 'default'
+  }
+
+  stages {
+
+    stage('Checkout') {
+      steps {
+        container('builder') {
+          checkout scm
+          sh '''
+            set -e
+            echo "Branch: ${BRANCH_NAME:-unknown}"
+            echo "Commit: ${GIT_COMMIT:-unknown}"
+            ls -la
+          '''
+        }
+      }
     }
 
-    stages {
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
+    stage('Unit Tests') {
+      steps {
+        container('builder') {
+          sh '''
+            set -e
+            python3 --version
+            pip3 install --upgrade pip
+            pip3 install -r app/requirements.txt pytest
+            PYTHONPATH=. pytest app/tests/test_sample.py -v --maxfail=1 --disable-warnings
+          '''
         }
-
-        stage('Unit Tests') {
-            steps {
-                sh '''
-                pip install --upgrade pip
-                pip install -r app/requirements.txt pytest
-                PYTHONPATH=. pytest app/tests/test_sample.py -v --maxfail=1 --disable-warnings
-                '''
-            }
-        }
-
-        stage('Helm Lint & Template') {
-            steps {
-                sh '''
-                helm lint helm/
-                helm template $HELM_RELEASE helm/ --namespace $NAMESPACE
-                '''
-            }
-        }
-
-        stage('Build Docker Image') {
-            steps {
-                sh '''
-                docker build -t $DOCKERHUB_REPO:${BUILD_NUMBER} -f app/Dockerfile .
-                docker tag $DOCKERHUB_REPO:${BUILD_NUMBER} $DOCKERHUB_REPO:latest
-                '''
-            }
-        }
-
-        stage('Push to Docker Hub') {
-            steps {
-                sh '''
-                echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin
-                docker push $DOCKERHUB_REPO:${BUILD_NUMBER}
-                docker push $DOCKERHUB_REPO:latest
-                '''
-            }
-        }
-
-        stage('Helm Package & Push') {
-            when {
-                branch 'main'
-            }
-            steps {
-                sh '''
-                helm package helm/ -d .
-                echo $DOCKERHUB_CREDENTIALS_PSW | helm registry login -u $DOCKERHUB_CREDENTIALS_USR docker.io
-                helm push ./${HELM_RELEASE}-*.tgz oci://registry-1.docker.io/ofirjean
-                '''
-            }
-        }
-
-        stage('Deploy with Helm') {
-            when {
-                branch 'main'
-            }
-            steps {
-                sh '''
-                helm upgrade --install $HELM_RELEASE helm/ \
-                    --set image.repository=$DOCKERHUB_REPO \
-                    --set image.tag=${BUILD_NUMBER} \
-                    --namespace $NAMESPACE \
-                    --create-namespace
-                '''
-            }
-        }
-
-        stage('Verify Deployment') {
-            when {
-                branch 'main'
-            }
-            steps {
-                sh '''
-                kubectl rollout status deployment/$APP_NAME -n $NAMESPACE
-                kubectl get pods -n $NAMESPACE
-                '''
-            }
-        }
+      }
     }
 
-    post {
-        always {
-            echo "Pipeline finished."
+    stage('Helm Lint & Template') {
+      steps {
+        container('builder') {
+          sh '''
+            set -e
+            helm version
+            helm lint app/helm/
+            helm template ${HELM_RELEASE} app/helm/ --namespace ${NAMESPACE}
+          '''
         }
-        failure {
-            echo "Pipeline failed ❌"
-
-            // Discord notification
-            sh '''
-            curl -H "Content-Type: application/json" \
-                 -X POST \
-                 -d "{\\"content\\": \\"❌ Pipeline FAILED: $JOB_NAME #$BUILD_NUMBER - see $BUILD_URL\\"}" \
-                 $DISCORD_WEBHOOK
-            '''
-
-            // Email notification
-            emailext(
-                to: 'ofirjean11@gmail.com',
-                subject: "❌ Jenkins pipeline FAILED: $JOB_NAME #$BUILD_NUMBER",
-                body: """<p>Pipeline failed for job <b>$JOB_NAME</b>, build #$BUILD_NUMBER</p>
-                         <p>See details: <a href='$BUILD_URL'>$BUILD_URL</a></p>"""
-            )
-        }
-        success {
-            echo "Pipeline succeeded ✅"
-
-            emailext(
-                to: 'ofirjean11@gmail.com',
-                subject: "✅ Jenkins pipeline RECOVERED: $JOB_NAME #$BUILD_NUMBER",
-                body: """<p>Pipeline succeeded for job <b>$JOB_NAME</b>, build #$BUILD_NUMBER</p>
-                         <p>See details: <a href='$BUILD_URL'>$BUILD_URL</a></p>"""
-            )
-        }
+      }
     }
+
+    stage('Build Docker Image') {
+      steps {
+        container('builder') {
+          sh '''
+            set -e
+            docker --version
+            docker build -t ${DOCKERHUB_REPO}:${BUILD_NUMBER} -f app/Dockerfile .
+            docker tag ${DOCKERHUB_REPO}:${BUILD_NUMBER} ${DOCKERHUB_REPO}:latest
+          '''
+        }
+      }
+    }
+
+    stage('Push to Docker Hub') {
+      steps {
+        container('builder') {
+          sh '''
+            set -e
+            echo "${DOCKERHUB_CREDENTIALS_PSW}" | docker login -u "${DOCKERHUB_CREDENTIALS_USR}" --password-stdin
+            docker push ${DOCKERHUB_REPO}:${BUILD_NUMBER}
+            docker push ${DOCKERHUB_REPO}:latest
+          '''
+        }
+      }
+    }
+
+    stage('Helm Package & Push (main only)') {
+      when { branch 'main' }
+      steps {
+        container('builder') {
+          sh '''
+            set -e
+            helm package app/helm/ -d .
+            echo "${DOCKERHUB_CREDENTIALS_PSW}" | helm registry login -u "${DOCKERHUB_CREDENTIALS_USR}" docker.io
+            CHART_TGZ=$(ls ./*.tgz | head -n1)
+            helm push "${CHART_TGZ}" oci://registry-1.docker.io/ofirjean
+          '''
+        }
+      }
+    }
+
+    stage('Deploy with Helm (main only)') {
+      when { branch 'main' }
+      steps {
+        container('builder') {
+          sh '''
+            set -e
+            kubectl version --client=true
+            helm upgrade --install ${HELM_RELEASE} app/helm/ \
+              --set image.repository=${DOCKERHUB_REPO} \
+              --set image.tag=${BUILD_NUMBER} \
+              --namespace ${NAMESPACE} \
+              --create-namespace
+          '''
+        }
+      }
+    }
+
+    stage('Verify Deployment (main only)') {
+      when { branch 'main' }
+      steps {
+        container('builder') {
+          sh '''
+            set -e
+            DEPLOY_NAME=$(helm get manifest ${HELM_RELEASE} -n ${NAMESPACE} | awk '/^kind: Deployment$/{getline; print $2}')
+            echo "Detected Deployment: ${DEPLOY_NAME:-<none>}"
+            kubectl rollout status deployment/${DEPLOY_NAME} -n ${NAMESPACE}
+            kubectl get pods -n ${NAMESPACE}
+          '''
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      echo "Pipeline finished."
+    }
+    failure {
+      echo "Pipeline failed ❌"
+      sh '''
+        if [ -n "${DISCORD_WEBHOOK:-}" ]; then
+          curl -sS -H "Content-Type: application/json" -X POST \
+            -d "{\\"content\\": \\"❌ Pipeline FAILED: $JOB_NAME #$BUILD_NUMBER - $BUILD_URL\\"}" \
+            "$DISCORD_WEBHOOK" || true
+        fi
+      '''
+      emailext(
+        to: 'ofirjean11@gmail.com',
+        subject: "❌ Jenkins pipeline FAILED: $JOB_NAME #$BUILD_NUMBER",
+        body: """<p>The pipeline failed.</p><p>Job: $JOB_NAME<br/>Build: <a href='$BUILD_URL'>$BUILD_URL</a></p>"""
+      )
+    }
+    success {
+      echo "Pipeline succeeded ✅"
+      emailext(
+        to: 'ofirjean11@gmail.com',
+        subject: "✅ Jenkins pipeline SUCCESS: $JOB_NAME #$BUILD_NUMBER",
+        body: """<p>The pipeline completed successfully.</p><p>Job: $JOB_NAME<br/>Build: <a href='$BUILD_URL'>$BUILD_URL</a></p>"""
+      )
+    }
+  }
 }
