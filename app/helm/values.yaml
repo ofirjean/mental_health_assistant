@@ -29,3 +29,6 @@ mongo:
 sanityTest:
   enabled: true
   image: curlimages/curl:8.10.0
+
+prometheus:
+  enabled: false
