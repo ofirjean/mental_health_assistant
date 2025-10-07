@@ -10,8 +10,8 @@ pipeline {
     DOCKERHUB_CREDENTIALS = credentials('DockerHub')
     DISCORD_WEBHOOK       = credentials('discord-webhook')
     DOCKERHUB_REPO        = 'ofirjean/mental_health_assistant'
-    HELM_RELEASE          = 'mha-release'
-    NAMESPACE             = 'mental-health'
+    BASE_RELEASE          = 'mha-release'
+    BASE_NAMESPACE        = 'mental-health'
   }
 
   stages {
@@ -22,9 +22,8 @@ pipeline {
           checkout scm
           sh '''
             set -e
-            echo "Branch: ${BRANCH_NAME:-unknown}"
+            echo "✅ Checked out branch: ${BRANCH_NAME:-unknown}"
             echo "Commit: ${GIT_COMMIT:-unknown}"
-            ls -la
           '''
         }
       }
@@ -49,9 +48,8 @@ pipeline {
         container('builder') {
           sh '''
             set -e
-            helm version
             helm lint app/helm/
-            helm template ${HELM_RELEASE} app/helm/ --namespace ${NAMESPACE}
+            helm template ${BASE_RELEASE}-${BRANCH_NAME} app/helm/ --namespace ${BASE_NAMESPACE}-${BRANCH_NAME}
           '''
         }
       }
@@ -63,47 +61,26 @@ pipeline {
           withCredentials([usernamePassword(credentialsId: 'DockerHub', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
             sh '''
               set -e
-              docker --version
-              docker build -t ${DH_USER}/mental_health_assistant:${BUILD_NUMBER} -f app/Dockerfile .
-              docker tag ${DH_USER}/mental_health_assistant:${BUILD_NUMBER} ${DH_USER}/mental_health_assistant:latest
+              docker build -t ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-${BUILD_NUMBER} -f app/Dockerfile .
+              docker tag ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-${BUILD_NUMBER} ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-latest
               echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
-              docker push ${DH_USER}/mental_health_assistant:${BUILD_NUMBER}
-              docker push ${DH_USER}/mental_health_assistant:latest
+              docker push ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-${BUILD_NUMBER}
+              docker push ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-latest
             '''
           }
         }
       }
     }
 
-    stage('Helm Package & Push (main only)') {
-      when { branch 'main' }
-      steps {
-        container('builder') {
-          withCredentials([usernamePassword(credentialsId: 'DockerHub', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-            sh '''
-              set -e
-              helm package app/helm/ -d .
-              helm registry login registry-1.docker.io \
-                --username "$USER" \
-                --password "$PASS"
-              CHART_TGZ=$(ls ./*.tgz | head -n1)
-              helm push "$CHART_TGZ" oci://registry-1.docker.io/$USER
-            '''
-          }
-        }
-      }
-    }
-
-    stage('Deploy with Helm (main only)') {
-      when { branch 'main' }
+    stage('Deploy with Helm (per branch)') {
       steps {
         container('builder') {
           sh '''
             set -e
-            helm upgrade --install ${HELM_RELEASE} app/helm/ \
+            helm upgrade --install ${BASE_RELEASE}-${BRANCH_NAME} app/helm/ \
               --set image.repository=${DOCKERHUB_REPO} \
-              --set image.tag=${BUILD_NUMBER} \
-              --namespace ${NAMESPACE} \
+              --set image.tag=${BRANCH_NAME}-${BUILD_NUMBER} \
+              --namespace ${BASE_NAMESPACE}-${BRANCH_NAME} \
               --create-namespace \
               --atomic --cleanup-on-fail
           '''
@@ -111,15 +88,14 @@ pipeline {
       }
     }
 
-    stage('Verify Deployment (main only)') {
-      when { branch 'main' }
+    stage('Verify Deployment') {
       steps {
         container('builder') {
           sh '''
             set -e
-            kubectl -n ${NAMESPACE} rollout status deployment/flask-app --timeout=90s
-            kubectl -n ${NAMESPACE} get pods
-            kubectl -n ${NAMESPACE} get svc
+            kubectl -n ${BASE_NAMESPACE}-${BRANCH_NAME} rollout status deployment/flask-app --timeout=90s
+            kubectl -n ${BASE_NAMESPACE}-${BRANCH_NAME} get pods
+            kubectl -n ${BASE_NAMESPACE}-${BRANCH_NAME} get svc
           '''
         }
       }
@@ -128,15 +104,15 @@ pipeline {
 
   post {
     success {
-      echo "✅ Pipeline succeeded!"
+      echo "✅ Pipeline succeeded for branch ${BRANCH_NAME}!"
     }
 
     failure {
-      echo "❌ Pipeline failed!"
+      echo "❌ Pipeline failed for branch ${BRANCH_NAME}!"
       script {
         if (env.DISCORD_WEBHOOK) {
           def message = [
-            content: "❌ Pipeline FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER} - ${env.BUILD_URL}"
+            content: "❌ Pipeline FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER} (${env.BRANCH_NAME}) - ${env.BUILD_URL}"
           ]
           httpRequest acceptType: 'APPLICATION_JSON',
                       contentType: 'APPLICATION_JSON',
@@ -148,8 +124,8 @@ pipeline {
       }
       emailext(
         to: 'ofirjean11@gmail.com',
-        subject: "❌ Jenkins Pipeline FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-        body: """<p>The pipeline failed.</p>
+        subject: "❌ Jenkins Pipeline FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER} (${env.BRANCH_NAME})",
+        body: """<p>The pipeline failed for branch <b>${env.BRANCH_NAME}</b>.</p>
                  <p>Job: ${env.JOB_NAME}<br/>
                  Build: <a href='${env.BUILD_URL}'>${env.BUILD_URL}</a></p>"""
       )
