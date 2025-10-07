@@ -1,35 +1,25 @@
 pipeline {
   agent {
     kubernetes {
-      label 'k8s-yaml'
-      defaultContainer 'builder'
       yamlFile 'ci/jenkins/build-agents.yaml'
+      defaultContainer 'builder'
     }
   }
 
-  options { skipDefaultCheckout(true) }
-
   environment {
-    // credentials
     DOCKERHUB_CREDENTIALS = credentials('DockerHub')
-    DISCORD_WEBHOOK       = credentials('discord-webhook')
-
-    // repo and helm info
-    DOCKERHUB_REPO = 'ofirjean/mental_health_assistant'
-    HELM_RELEASE   = 'mha-release'
-    NAMESPACE      = 'default'
+    DISCORD_WEBHOOK = credentials('DiscordWebhook')
   }
 
   stages {
-
     stage('Checkout') {
       steps {
         container('builder') {
           checkout scm
           sh '''
             set -e
-            echo "Branch: ${BRANCH_NAME:-unknown}"
-            echo "Commit: ${GIT_COMMIT:-unknown}"
+            echo "Branch: ${BRANCH_NAME}"
+            echo "Commit: ${GIT_COMMIT}"
             ls -la
           '''
         }
@@ -57,7 +47,7 @@ pipeline {
             set -e
             helm version
             helm lint app/helm/
-            helm template ${HELM_RELEASE} app/helm/ --namespace ${NAMESPACE}
+            helm template mha-release app/helm/ --namespace default
           '''
         }
       }
@@ -66,25 +56,15 @@ pipeline {
     stage('Build Docker Image') {
       steps {
         container('builder') {
-          sh '''
-            set -e
-            docker --version
-            docker build -t ${DOCKERHUB_REPO}:${BUILD_NUMBER} -f app/Dockerfile .
-            docker tag ${DOCKERHUB_REPO}:${BUILD_NUMBER} ${DOCKERHUB_REPO}:latest
-          '''
-        }
-      }
-    }
-
-    stage('Push to Docker Hub') {
-      steps {
-        container('builder') {
-          sh '''
-            set -e
-            echo "${DOCKERHUB_CREDENTIALS_PSW}" | docker login -u "${DOCKERHUB_CREDENTIALS_USR}" --password-stdin
-            docker push ${DOCKERHUB_REPO}:${BUILD_NUMBER}
-            docker push ${DOCKERHUB_REPO}:latest
-          '''
+          withCredentials([usernamePassword(credentialsId: 'DockerHub', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+            sh '''
+              set -e
+              docker --version
+              docker build -t ${DH_USER}/mental_health_assistant:${BUILD_NUMBER} -f app/Dockerfile .
+              echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
+              docker push ${DH_USER}/mental_health_assistant:${BUILD_NUMBER}
+            '''
+          }
         }
       }
     }
@@ -93,13 +73,20 @@ pipeline {
       when { branch 'main' }
       steps {
         container('builder') {
-          sh '''
-            set -e
-            helm package app/helm/ -d .
-            echo "${DOCKERHUB_CREDENTIALS_PSW}" | helm registry login -u "${DOCKERHUB_CREDENTIALS_USR}" docker.io
-            CHART_TGZ=$(ls ./*.tgz | head -n1)
-            helm push "${CHART_TGZ}" oci://registry-1.docker.io/ofirjean
-          '''
+          withCredentials([usernamePassword(credentialsId: 'DockerHub', usernameVariable: 'DOCKERHUB_CREDENTIALS_USR', passwordVariable: 'DOCKERHUB_CREDENTIALS_PSW')]) {
+            sh '''
+              set -e
+              helm package app/helm/ -d .
+
+              # ✅ Non-interactive Helm registry login
+              helm registry login registry-1.docker.io \
+                --username "${DOCKERHUB_CREDENTIALS_USR}" \
+                --password "${DOCKERHUB_CREDENTIALS_PSW}"
+
+              CHART_TGZ=$(ls ./*.tgz | head -n1)
+              helm push "${CHART_TGZ}" oci://registry-1.docker.io/${DOCKERHUB_CREDENTIALS_USR}
+            '''
+          }
         }
       }
     }
@@ -110,12 +97,11 @@ pipeline {
         container('builder') {
           sh '''
             set -e
-            kubectl version --client=true
-            helm upgrade --install ${HELM_RELEASE} app/helm/ \
-              --set image.repository=${DOCKERHUB_REPO} \
+            helm upgrade --install mental-health-app app/helm/ \
+              -n mental-health \
+              -f app/helm/values.yaml \
               --set image.tag=${BUILD_NUMBER} \
-              --namespace ${NAMESPACE} \
-              --create-namespace
+              --atomic --cleanup-on-fail
           '''
         }
       }
@@ -126,11 +112,9 @@ pipeline {
       steps {
         container('builder') {
           sh '''
-            set -e
-            DEPLOY_NAME=$(helm get manifest ${HELM_RELEASE} -n ${NAMESPACE} | awk '/^kind: Deployment$/{getline; print $2}')
-            echo "Detected Deployment: ${DEPLOY_NAME:-<none>}"
-            kubectl rollout status deployment/${DEPLOY_NAME} -n ${NAMESPACE}
-            kubectl get pods -n ${NAMESPACE}
+            kubectl -n mental-health rollout status deployment/flask-app --timeout=90s
+            kubectl -n mental-health get pods
+            kubectl -n mental-health get svc
           '''
         }
       }
@@ -138,31 +122,20 @@ pipeline {
   }
 
   post {
-    always {
-      echo "Pipeline finished."
+    success {
+      echo "Pipeline succeeded ✅"
     }
     failure {
       echo "Pipeline failed ❌"
       sh '''
-        if [ -n "${DISCORD_WEBHOOK:-}" ]; then
-          curl -sS -H "Content-Type: application/json" -X POST \
-            -d "{\\"content\\": \\"❌ Pipeline FAILED: $JOB_NAME #$BUILD_NUMBER - $BUILD_URL\\"}" \
-            "$DISCORD_WEBHOOK" || true
+        if [ -n "${DISCORD_WEBHOOK}" ]; then
+          curl -sS -H 'Content-Type: application/json' \
+          -X POST -d '{"content": "❌ Pipeline FAILED: multipipe/${BRANCH_NAME} #${BUILD_NUMBER} - http://jenkins:8080/job/multipipe/job/${BRANCH_NAME}/${BUILD_NUMBER}/"}' "${DISCORD_WEBHOOK}"
         fi
       '''
-      emailext(
-        to: 'ofirjean11@gmail.com',
-        subject: "❌ Jenkins pipeline FAILED: $JOB_NAME #$BUILD_NUMBER",
-        body: """<p>The pipeline failed.</p><p>Job: $JOB_NAME<br/>Build: <a href='$BUILD_URL'>$BUILD_URL</a></p>"""
-      )
-    }
-    success {
-      echo "Pipeline succeeded ✅"
-      emailext(
-        to: 'ofirjean11@gmail.com',
-        subject: "✅ Jenkins pipeline SUCCESS: $JOB_NAME #$BUILD_NUMBER",
-        body: """<p>The pipeline completed successfully.</p><p>Job: $JOB_NAME<br/>Build: <a href='$BUILD_URL'>$BUILD_URL</a></p>"""
-      )
+      emailext to: 'ofirjean11@gmail.com',
+               subject: "❌ Jenkins Pipeline Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+               body: "Check the build log: ${env.BUILD_URL}"
     }
   }
 }
