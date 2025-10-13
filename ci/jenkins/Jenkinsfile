@@ -22,7 +22,7 @@ spec:
     - name: DOCKER_HOST
       value: tcp://localhost:2375
     volumeMounts:
-    - name: workspace
+    - name: shared-workspace
       mountPath: /home/jenkins/agent
   - name: dind
     image: docker:27-dind
@@ -32,11 +32,8 @@ spec:
     - name: DOCKER_TLS_CERTDIR
       value: ""
     volumeMounts:
-    - name: docker-graph
+    - name: shared-workspace
       mountPath: /var/lib/docker
-    - name: workspace-volume
-      mountPath: /home/jenkins/agent
-      readOnly: false
   - name: jnlp
     image: jenkins/inbound-agent:3341.v0766d82b_dec0-1
     resources:
@@ -44,15 +41,11 @@ spec:
         memory: "256Mi"
         cpu: "100m"
     volumeMounts:
-    - name: workspace-volume
+    - name: shared-workspace
       mountPath: /home/jenkins/agent
-volumes:
-- name: workspace
-  emptyDir: {}
-- name: docker-graph
-  emptyDir: {}
-- name: workspace-volume
-  emptyDir: {}
+  volumes:
+  - name: shared-workspace
+    emptyDir: {}
 """
     }
   }
@@ -63,19 +56,14 @@ volumes:
   }
 
   stages {
-
     stage('Sanity & Setup') {
       steps {
         container('builder') {
           sh '''
             set -ex
-            # ✅ Fix permissions so Jenkins can run shell scripts inside the pod
             chown -R 1000:1000 /home/jenkins/agent || true
-
             echo "🌍 Environment Info"
-            uname -a
             apk add --no-cache git docker-cli bash coreutils curl tar gzip kubectl
-            echo "✅ Builder ready"
           '''
         }
       }
@@ -85,13 +73,11 @@ volumes:
       steps {
         container('builder') {
           sh '''
-            echo "🧩 Helm version check"
             wget -q https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz
             tar -zxf helm-v3.15.2-linux-amd64.tar.gz
             mv linux-amd64/helm /usr/local/bin/helm
             chmod +x /usr/local/bin/helm
 
-            helm version
             helm lint app/helm
             helm template app/helm
           '''
@@ -103,9 +89,8 @@ volumes:
       steps {
         container('builder') {
           sh '''
-            echo "🐳 Building Docker image"
             docker build -t $IMAGE_REPO:$BRANCH_NAME .
-            echo "🚀 (Skipping push — no credentials configured)"
+            echo "✅ Image built (push skipped)"
           '''
         }
       }
@@ -115,9 +100,7 @@ volumes:
       steps {
         container('builder') {
           sh '''
-            echo "🚀 Deploying Helm release"
             helm upgrade --install mental-health-app ./app/helm -n mental-health --create-namespace --atomic
-            echo "✅ Deployment finished"
           '''
         }
       }
@@ -127,7 +110,6 @@ volumes:
       steps {
         container('builder') {
           sh '''
-            echo "🔍 Checking rollout status"
             kubectl -n mental-health rollout status deploy/flask-app
             kubectl -n mental-health get pods
           '''
@@ -140,12 +122,12 @@ volumes:
     success {
       mail to: 'ofirjean11@gmail.com',
            subject: "✅ Jenkins Pipeline Succeeded: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-           body: "The Jenkins pipeline completed successfully!"
+           body: "Pipeline completed successfully!"
     }
     failure {
       mail to: 'ofirjean11@gmail.com',
            subject: "❌ Jenkins Pipeline Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-           body: "The Jenkins pipeline failed. Check the Jenkins console for details."
+           body: "Pipeline failed — check Jenkins logs."
     }
   }
 }
