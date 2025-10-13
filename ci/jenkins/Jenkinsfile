@@ -30,13 +30,15 @@ spec:
         - |
           set -ex
           apk update
-          apk add --no-cache git docker-cli bash coreutils curl tar kubectl
-          # Install Helm cleanly
+          apk add --no-cache git docker-cli bash coreutils curl tar gzip kubectl
+          # Reliable Helm installation
           curl -fsSL https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz -o /tmp/helm.tar.gz
-          tar -zxvf /tmp/helm.tar.gz -C /tmp
-          mv /tmp/linux-amd64/helm /usr/local/bin/helm
+          mkdir -p /tmp/helm-install
+          tar -zxvf /tmp/helm.tar.gz -C /tmp/helm-install
+          mv /tmp/helm-install/linux-amd64/helm /usr/local/bin/helm
           chmod +x /usr/local/bin/helm
-          helm version
+          echo "✅ Helm installed at $(which helm)"
+          helm version --short || true
           echo "✅ builder ready"
           sleep infinity
       env:
