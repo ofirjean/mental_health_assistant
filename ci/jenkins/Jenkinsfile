@@ -30,12 +30,15 @@ spec:
         - |
           set -ex
           apk update
-          apk add --no-cache git docker-cli bash coreutils curl wget tar kubectl
-          wget -q https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz
-          tar -zxf helm-v3.15.2-linux-amd64.tar.gz
-          mv linux-amd64/helm /usr/local/bin/helm
+          apk add --no-cache git docker-cli bash coreutils curl tar kubectl
+          # Install Helm cleanly
+          curl -fsSL https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz -o /tmp/helm.tar.gz
+          tar -zxvf /tmp/helm.tar.gz -C /tmp
+          mv /tmp/linux-amd64/helm /usr/local/bin/helm
           chmod +x /usr/local/bin/helm
-          echo "✅ builder ready"; sleep infinity
+          helm version
+          echo "✅ builder ready"
+          sleep infinity
       env:
         - name: DOCKER_HOST
           value: tcp://localhost:2375
@@ -134,7 +137,6 @@ spec:
             sh '''
               set -e
               echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
-              # Dockerfile is in app/, so build with app/ as context:
               docker build -t ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-${BUILD_NUMBER} -f app/Dockerfile app
               docker tag ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-${BUILD_NUMBER} ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-latest
               docker push ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-${BUILD_NUMBER}
@@ -181,7 +183,7 @@ spec:
       emailext(
         to: 'ofirjean11@gmail.com',
         subject: "[MHA] ✅ Build #${env.BUILD_NUMBER} passed (${env.BRANCH_NAME})",
-        body: "All stages completed.\nImage: ${env.DOCKERHUB_REPO}:${env.BRANCH_NAME}-${env.BUILD_NUMBER}\n${env.BUILD_URL}",
+        body: "All stages completed.\\nImage: ${env.DOCKERHUB_REPO}:${env.BRANCH_NAME}-${env.BUILD_NUMBER}\\n${env.BUILD_URL}",
         mimeType: 'text/plain'
       )
     }
