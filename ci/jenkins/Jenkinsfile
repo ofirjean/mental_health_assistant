@@ -13,17 +13,14 @@ spec:
   - name: builder
     image: python:3.11-alpine
     tty: true
-    command:
-    - /bin/sh
-    - -lc
-    args:
-    - sleep infinity
+    command: ["/bin/sh", "-lc"]
+    args: ["sleep infinity"]
     env:
     - name: DOCKER_HOST
       value: tcp://localhost:2375
     volumeMounts:
-    - mountPath: /home/jenkins/agent
-      name: workspace
+    - name: workspace
+      mountPath: /home/jenkins/agent
   - name: dind
     image: docker:27-dind
     securityContext:
@@ -32,29 +29,47 @@ spec:
     - name: DOCKER_TLS_CERTDIR
       value: ""
     volumeMounts:
-    - mountPath: /var/lib/docker
-      name: docker-graph
-    - mountPath: /home/jenkins/agent
-      name: workspace-volume
+    - name: docker-graph
+      mountPath: /var/lib/docker
+    - name: workspace-volume
+      mountPath: /home/jenkins/agent
       readOnly: false
   - name: jnlp
     image: jenkins/inbound-agent:3341.v0766d82b_dec0-1
-    args: ['\$(JENKINS_SECRET)', '\$(JENKINS_NAME)']
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+    volumeMounts:
+    - name: workspace-volume
+      mountPath: /home/jenkins/agent
+      readOnly: false
   volumes:
-  - emptyDir: {}
-    name: workspace
-  - emptyDir: {}
-    name: docker-graph
-  - emptyDir: {}
-    name: workspace-volume
+  - name: workspace
+    emptyDir: {}
+  - name: docker-graph
+    emptyDir: {}
+  - name: workspace-volume
+    emptyDir: {}
 """
     }
   }
 
+  options {
+    ansiColor('xterm')
+    timestamps()
+    buildDiscarder(logRotator(numToKeepStr: '15'))
+    timeout(time: 30, unit: 'MINUTES')
+  }
+
   environment {
-    IMAGE = "ofirjean/mental-health-assistant"
-    BRANCH = "${env.GIT_BRANCH ?: 'main'}"
-    EMAIL_RECIPIENT = "ofirjean11@gmail.com"
+    REGISTRY_USER    = 'ofirjean'
+    IMAGE_NAME       = 'mental_health_assistant'
+    IMAGE_REPO       = "${env.REGISTRY_USER}/${env.IMAGE_NAME}"
+    K8S_NAMESPACE    = 'mental-health-main'
+    RELEASE_NAME     = 'mha-release-main'
+    CHART_DIR        = 'app/helm'
+    EMAIL_TO         = 'ofirjean11@gmail.com'
   }
 
   stages {
@@ -63,25 +78,61 @@ spec:
       steps {
         container('builder') {
           sh '''
-          set -ex
-          echo "🔧 Fixing workspace permissions..."
-          chown -R 1000:1000 /home/jenkins/agent || true
+            set -ex
+            echo "🌍 Environment:"
+            uname -a
+            echo "Installing base tools..."
+            apk update
+            apk add --no-cache git docker-cli bash coreutils curl wget tar gzip kubectl
 
-          echo "🔧 System info:"
-          uname -a
+            echo "Installing Helm..."
+            curl -fsSL https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz -o /tmp/helm.tar.gz
+            tar -zxvf /tmp/helm.tar.gz -C /tmp/
+            mv /tmp/linux-amd64/helm /usr/local/bin/helm
+            chmod +x /usr/local/bin/helm
+            helm version --short || true
+            kubectl version --client || true
 
-          echo "📦 Installing dependencies..."
-          apk update
-          apk add --no-cache git docker-cli bash coreutils curl wget tar gzip kubectl
-
-          echo "📦 Installing Helm..."
-          wget -q https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz
-          tar -zxvf helm-v3.15.2-linux-amd64.tar.gz
-          mv linux-amd64/helm /usr/local/bin/helm
-          chmod +x /usr/local/bin/helm
-          helm version --short
-          echo "✅ Environment ready!"
+            echo "✅ Environment ready"
           '''
+        }
+      }
+    }
+
+    stage('Checkout') {
+      steps {
+        container('builder') {
+          checkout([
+            $class: 'GitSCM',
+            branches: [[name: '*/main']],
+            userRemoteConfigs: [[
+              url: 'https://gitlab.com/sela-tracks/1116/students/ofir/final-project.git',
+              credentialsId: 'gitlab'
+            ]]
+          ])
+          sh '''
+            echo "✅ Checked out main"
+            git --no-pager log -1 --pretty=oneline || true
+          '''
+        }
+      }
+    }
+
+    stage('Unit Tests') {
+      steps {
+        container('builder') {
+          sh '''
+            set -e
+            pip3 install --upgrade pip
+            pip3 install -r app/requirements.txt pytest
+            mkdir -p test-reports
+            PYTHONPATH=. pytest app/tests/test_sample.py -v --maxfail=1 --disable-warnings --junitxml=test-reports/pytest.xml
+          '''
+        }
+      }
+      post {
+        always {
+          junit 'test-reports/pytest.xml'
         }
       }
     }
@@ -90,25 +141,29 @@ spec:
       steps {
         container('builder') {
           sh '''
-          set -ex
-          echo "🔍 Running Helm lint and template..."
-          helm lint app/helm
-          helm template app/helm
+            set -e
+            helm lint ${CHART_DIR}
+            helm template ${RELEASE_NAME} ${CHART_DIR} --namespace ${K8S_NAMESPACE}
           '''
         }
       }
     }
 
     stage('Build & Push Docker Image') {
+      environment {
+        DH_PASS = credentials('dockerhub-password')
+      }
       steps {
         container('builder') {
           sh '''
-          set -ex
-          echo "🐳 Building and pushing Docker image..."
-          docker version || echo "Docker client check OK"
-          docker build -t ${IMAGE}:${BRANCH} .
-          docker images | grep ${IMAGE} || true
-          echo "✅ Build completed (simulated push skipped for security)"
+            set -e
+            TAG="main-${BUILD_NUMBER}"
+            echo "${DH_PASS}" | docker login -u ${REGISTRY_USER} --password-stdin
+            docker build -t ${IMAGE_REPO}:${TAG} -f app/Dockerfile app
+            docker push ${IMAGE_REPO}:${TAG}
+            docker tag ${IMAGE_REPO}:${TAG} ${IMAGE_REPO}:main-latest
+            docker push ${IMAGE_REPO}:main-latest
+            echo ${TAG} > .image_tag
           '''
         }
       }
@@ -118,11 +173,14 @@ spec:
       steps {
         container('builder') {
           sh '''
-          set -ex
-          echo "🚀 Deploying application via Helm..."
-          helm upgrade --install mental-health-app ./app/helm -n mental-health --atomic --cleanup-on-fail
-          kubectl -n mental-health rollout status deploy/flask-app
-          echo "✅ Deployment completed!"
+            set -e
+            TAG=$(cat .image_tag)
+            # IMPORTANT: do NOT force a fixed nodePort here; values.yaml should NOT specify nodePort unless you *must*.
+            helm upgrade --install ${RELEASE_NAME} ${CHART_DIR} \
+              --namespace ${K8S_NAMESPACE} --create-namespace \
+              --set image.repository=${IMAGE_REPO} \
+              --set image.tag=${TAG} \
+              --atomic --cleanup-on-fail
           '''
         }
       }
@@ -132,9 +190,8 @@ spec:
       steps {
         container('builder') {
           sh '''
-          echo "🔎 Verifying deployment health..."
-          kubectl get pods -n mental-health
-          kubectl get svc -n mental-health
+            set -ex
+            kubectl -n ${K8S_NAMESPACE} get deploy,po,svc
           '''
         }
       }
@@ -143,17 +200,17 @@ spec:
 
   post {
     success {
-      emailext (
-        subject: "✅ Jenkins Pipeline SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-        body: "Good news! The Jenkins pipeline completed successfully for branch ${env.BRANCH_NAME}.",
-        to: "${EMAIL_RECIPIENT}"
+      emailext(
+        to: "${EMAIL_TO}",
+        subject: "✅ SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+        body: "Pipeline succeeded for ${env.JOB_NAME} #${env.BUILD_NUMBER}\nImage: ${env.IMAGE_REPO}:main-${env.BUILD_NUMBER}\nNamespace: ${env.K8S_NAMESPACE}"
       )
     }
     failure {
-      emailext (
-        subject: "❌ Jenkins Pipeline FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-        body: "Something went wrong in the Jenkins pipeline for branch ${env.BRANCH_NAME}. Please check the Jenkins console logs.",
-        to: "${EMAIL_RECIPIENT}"
+      emailext(
+        to: "${EMAIL_TO}",
+        subject: "❌ FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+        body: "Pipeline failed for ${env.JOB_NAME} #${env.BUILD_NUMBER}\nCheck Jenkins logs."
       )
     }
   }
