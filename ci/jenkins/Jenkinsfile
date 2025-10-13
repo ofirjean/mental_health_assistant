@@ -9,6 +9,9 @@ metadata:
     jenkins: agent
 spec:
   serviceAccountName: jenkins
+  securityContext:
+    runAsUser: 0
+    fsGroup: 0
   containers:
   - name: builder
     image: python:3.11-alpine
@@ -16,9 +19,7 @@ spec:
     - /bin/sh
     - -lc
     args:
-    - |
-      chmod -R 777 /home/jenkins/agent || true
-      sleep infinity
+    - sleep infinity
     tty: true
     env:
     - name: DOCKER_HOST
@@ -31,6 +32,7 @@ spec:
     image: docker:27-dind
     securityContext:
       privileged: true
+      runAsUser: 0
     env:
     - name: DOCKER_TLS_CERTDIR
       value: ""
@@ -50,9 +52,7 @@ spec:
 
   volumes:
   - name: shared-workspace
-    emptyDir:
-      medium: ""
-      sizeLimit: 1Gi
+    emptyDir: {}
 """
     }
   }
