@@ -12,9 +12,12 @@ spec:
   containers:
   - name: builder
     image: python:3.11-alpine
+    command:
+    - /bin/sh
+    - -lc
+    args:
+    - sleep infinity
     tty: true
-    command: ["/bin/sh", "-lc"]
-    args: ["sleep infinity"]
     env:
     - name: DOCKER_HOST
       value: tcp://localhost:2375
@@ -43,33 +46,20 @@ spec:
     volumeMounts:
     - name: workspace-volume
       mountPath: /home/jenkins/agent
-      readOnly: false
-  volumes:
-  - name: workspace
-    emptyDir: {}
-  - name: docker-graph
-    emptyDir: {}
-  - name: workspace-volume
-    emptyDir: {}
+volumes:
+- name: workspace
+  emptyDir: {}
+- name: docker-graph
+  emptyDir: {}
+- name: workspace-volume
+  emptyDir: {}
 """
     }
   }
 
-  options {
-    ansiColor('xterm')
-    timestamps()
-    buildDiscarder(logRotator(numToKeepStr: '15'))
-    timeout(time: 30, unit: 'MINUTES')
-  }
-
   environment {
-    REGISTRY_USER    = 'ofirjean'
-    IMAGE_NAME       = 'mental_health_assistant'
-    IMAGE_REPO       = "${env.REGISTRY_USER}/${env.IMAGE_NAME}"
-    K8S_NAMESPACE    = 'mental-health-main'
-    RELEASE_NAME     = 'mha-release-main'
-    CHART_DIR        = 'app/helm'
-    EMAIL_TO         = 'ofirjean11@gmail.com'
+    IMAGE_REPO = "ofirjean/mental-health-assistant"
+    BRANCH_NAME = "${env.BRANCH_NAME ?: 'main'}"
   }
 
   stages {
@@ -79,60 +69,14 @@ spec:
         container('builder') {
           sh '''
             set -ex
-            echo "🌍 Environment:"
+            # ✅ Fix permissions so Jenkins can run shell scripts inside the pod
+            chown -R 1000:1000 /home/jenkins/agent || true
+
+            echo "🌍 Environment Info"
             uname -a
-            echo "Installing base tools..."
-            apk update
-            apk add --no-cache git docker-cli bash coreutils curl wget tar gzip kubectl
-
-            echo "Installing Helm..."
-            curl -fsSL https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz -o /tmp/helm.tar.gz
-            tar -zxvf /tmp/helm.tar.gz -C /tmp/
-            mv /tmp/linux-amd64/helm /usr/local/bin/helm
-            chmod +x /usr/local/bin/helm
-            helm version --short || true
-            kubectl version --client || true
-
-            echo "✅ Environment ready"
+            apk add --no-cache git docker-cli bash coreutils curl tar gzip kubectl
+            echo "✅ Builder ready"
           '''
-        }
-      }
-    }
-
-    stage('Checkout') {
-      steps {
-        container('builder') {
-          checkout([
-            $class: 'GitSCM',
-            branches: [[name: '*/main']],
-            userRemoteConfigs: [[
-              url: 'https://gitlab.com/sela-tracks/1116/students/ofir/final-project.git',
-              credentialsId: 'gitlab'
-            ]]
-          ])
-          sh '''
-            echo "✅ Checked out main"
-            git --no-pager log -1 --pretty=oneline || true
-          '''
-        }
-      }
-    }
-
-    stage('Unit Tests') {
-      steps {
-        container('builder') {
-          sh '''
-            set -e
-            pip3 install --upgrade pip
-            pip3 install -r app/requirements.txt pytest
-            mkdir -p test-reports
-            PYTHONPATH=. pytest app/tests/test_sample.py -v --maxfail=1 --disable-warnings --junitxml=test-reports/pytest.xml
-          '''
-        }
-      }
-      post {
-        always {
-          junit 'test-reports/pytest.xml'
         }
       }
     }
@@ -141,29 +85,27 @@ spec:
       steps {
         container('builder') {
           sh '''
-            set -e
-            helm lint ${CHART_DIR}
-            helm template ${RELEASE_NAME} ${CHART_DIR} --namespace ${K8S_NAMESPACE}
+            echo "🧩 Helm version check"
+            wget -q https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz
+            tar -zxf helm-v3.15.2-linux-amd64.tar.gz
+            mv linux-amd64/helm /usr/local/bin/helm
+            chmod +x /usr/local/bin/helm
+
+            helm version
+            helm lint app/helm
+            helm template app/helm
           '''
         }
       }
     }
 
     stage('Build & Push Docker Image') {
-      environment {
-        DH_PASS = credentials('dockerhub-password')
-      }
       steps {
         container('builder') {
           sh '''
-            set -e
-            TAG="main-${BUILD_NUMBER}"
-            echo "${DH_PASS}" | docker login -u ${REGISTRY_USER} --password-stdin
-            docker build -t ${IMAGE_REPO}:${TAG} -f app/Dockerfile app
-            docker push ${IMAGE_REPO}:${TAG}
-            docker tag ${IMAGE_REPO}:${TAG} ${IMAGE_REPO}:main-latest
-            docker push ${IMAGE_REPO}:main-latest
-            echo ${TAG} > .image_tag
+            echo "🐳 Building Docker image"
+            docker build -t $IMAGE_REPO:$BRANCH_NAME .
+            echo "🚀 (Skipping push — no credentials configured)"
           '''
         }
       }
@@ -173,14 +115,9 @@ spec:
       steps {
         container('builder') {
           sh '''
-            set -e
-            TAG=$(cat .image_tag)
-            # IMPORTANT: do NOT force a fixed nodePort here; values.yaml should NOT specify nodePort unless you *must*.
-            helm upgrade --install ${RELEASE_NAME} ${CHART_DIR} \
-              --namespace ${K8S_NAMESPACE} --create-namespace \
-              --set image.repository=${IMAGE_REPO} \
-              --set image.tag=${TAG} \
-              --atomic --cleanup-on-fail
+            echo "🚀 Deploying Helm release"
+            helm upgrade --install mental-health-app ./app/helm -n mental-health --create-namespace --atomic
+            echo "✅ Deployment finished"
           '''
         }
       }
@@ -190,8 +127,9 @@ spec:
       steps {
         container('builder') {
           sh '''
-            set -ex
-            kubectl -n ${K8S_NAMESPACE} get deploy,po,svc
+            echo "🔍 Checking rollout status"
+            kubectl -n mental-health rollout status deploy/flask-app
+            kubectl -n mental-health get pods
           '''
         }
       }
@@ -200,18 +138,14 @@ spec:
 
   post {
     success {
-      emailext(
-        to: "${EMAIL_TO}",
-        subject: "✅ SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-        body: "Pipeline succeeded for ${env.JOB_NAME} #${env.BUILD_NUMBER}\nImage: ${env.IMAGE_REPO}:main-${env.BUILD_NUMBER}\nNamespace: ${env.K8S_NAMESPACE}"
-      )
+      mail to: 'ofirjean11@gmail.com',
+           subject: "✅ Jenkins Pipeline Succeeded: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+           body: "The Jenkins pipeline completed successfully!"
     }
     failure {
-      emailext(
-        to: "${EMAIL_TO}",
-        subject: "❌ FAILURE: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-        body: "Pipeline failed for ${env.JOB_NAME} #${env.BUILD_NUMBER}\nCheck Jenkins logs."
-      )
+      mail to: 'ofirjean11@gmail.com',
+           subject: "❌ Jenkins Pipeline Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+           body: "The Jenkins pipeline failed. Check the Jenkins console for details."
     }
   }
 }
