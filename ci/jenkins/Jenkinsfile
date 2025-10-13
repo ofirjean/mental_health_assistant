@@ -16,7 +16,9 @@ spec:
     - /bin/sh
     - -lc
     args:
-    - sleep infinity
+    - |
+      chmod -R 777 /home/jenkins/agent || true
+      sleep infinity
     tty: true
     env:
     - name: DOCKER_HOST
@@ -24,6 +26,7 @@ spec:
     volumeMounts:
     - name: shared-workspace
       mountPath: /home/jenkins/agent
+
   - name: dind
     image: docker:27-dind
     securityContext:
@@ -34,6 +37,7 @@ spec:
     volumeMounts:
     - name: shared-workspace
       mountPath: /var/lib/docker
+
   - name: jnlp
     image: jenkins/inbound-agent:3341.v0766d82b_dec0-1
     resources:
@@ -43,9 +47,12 @@ spec:
     volumeMounts:
     - name: shared-workspace
       mountPath: /home/jenkins/agent
+
   volumes:
   - name: shared-workspace
-    emptyDir: {}
+    emptyDir:
+      medium: ""
+      sizeLimit: 1Gi
 """
     }
   }
@@ -61,7 +68,6 @@ spec:
         container('builder') {
           sh '''
             set -ex
-            chown -R 1000:1000 /home/jenkins/agent || true
             echo "🌍 Environment Info"
             apk add --no-cache git docker-cli bash coreutils curl tar gzip kubectl
           '''
@@ -77,7 +83,6 @@ spec:
             tar -zxf helm-v3.15.2-linux-amd64.tar.gz
             mv linux-amd64/helm /usr/local/bin/helm
             chmod +x /usr/local/bin/helm
-
             helm lint app/helm
             helm template app/helm
           '''
