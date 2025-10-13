@@ -7,7 +7,6 @@ service:
   type: NodePort
   port: 80
   targetPort: 5000
-  nodePort: 30080
 
 env:
   GEMINI_MODEL: "gemini-1.5-flash"

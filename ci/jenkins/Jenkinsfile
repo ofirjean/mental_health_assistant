@@ -1,7 +1,7 @@
 pipeline {
   agent {
     kubernetes {
-      yaml '''
+      yaml """
 apiVersion: v1
 kind: Pod
 metadata:
@@ -9,62 +9,42 @@ metadata:
     jenkins: agent
 spec:
   serviceAccountName: jenkins
-  securityContext:
-    fsGroup: 1000
-  volumes:
-    - name: workspace
-      emptyDir: {}
-    - name: docker-graph
-      emptyDir: {}
   containers:
-    - name: jnlp
-      image: jenkins/inbound-agent:latest-jdk17
-      volumeMounts:
-        - name: workspace
-          mountPath: /home/jenkins/agent
-
-    - name: builder
-      image: python:3.11-alpine
-      command: ["/bin/sh","-lc"]
-      args: ["sleep infinity"]
-      env:
-        - name: DOCKER_HOST
-          value: tcp://localhost:2375
-      tty: true
-      volumeMounts:
-        - name: workspace
-          mountPath: /home/jenkins/agent
-
-    - name: dind
-      image: docker:27-dind
-      securityContext:
-        privileged: true
-      env:
-        - name: DOCKER_TLS_CERTDIR
-          value: ""
-      args:
-        - --host=tcp://0.0.0.0:2375
-        - --storage-driver=overlay2
-      volumeMounts:
-        - name: docker-graph
-          mountPath: /var/lib/docker
-'''
-      defaultContainer 'builder'
-      idleMinutes 5
+  - name: builder
+    image: python:3.11-alpine
+    tty: true
+    command: ["/bin/sh", "-lc"]
+    args: ["sleep infinity"]
+    env:
+    - name: DOCKER_HOST
+      value: tcp://localhost:2375
+    volumeMounts:
+    - name: workspace
+      mountPath: /home/jenkins/agent
+  - name: dind
+    image: docker:27-dind
+    securityContext:
+      privileged: true
+    env:
+    - name: DOCKER_TLS_CERTDIR
+      value: ""
+    volumeMounts:
+    - name: docker-graph
+      mountPath: /var/lib/docker
+  volumes:
+  - name: workspace
+    emptyDir: {}
+  - name: docker-graph
+    emptyDir: {}
+"""
     }
   }
 
-  options {
-    timestamps()
-    ansiColor('xterm')
-    skipDefaultCheckout(true)
-    disableConcurrentBuilds()
-  }
-
   environment {
-    DOCKERHUB_REPO   = 'ofirjean/mental_health_assistant'
-    BASE_RELEASE     = 'mha-release'
-    BASE_NAMESPACE   = 'mental-health'
+    DOCKERHUB_USER = 'ofirjean'
+    DOCKER_IMAGE = 'mental_health_assistant'
+    BASE_RELEASE = 'mha-release'
+    BASE_NAMESPACE = 'mental-health'
   }
 
   stages {
@@ -73,20 +53,16 @@ spec:
       steps {
         container('builder') {
           sh '''
-            set -ex
-            echo "🌍 Environment:"
-            uname -a
-            python3 --version
-            echo "Installing Helm..."
-            apk update
-            apk add --no-cache curl tar gzip bash coreutils docker-cli kubectl
-            curl -fsSL https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz -o /tmp/helm.tar.gz
-            tar -zxvf /tmp/helm.tar.gz -C /tmp/
-            mv /tmp/linux-amd64/helm /usr/local/bin/helm
-            chmod +x /usr/local/bin/helm
-            helm version --short
-            kubectl version --client
-            echo "✅ Environment ready"
+          set -ex
+          apk update
+          apk add --no-cache git curl tar gzip bash coreutils docker-cli kubectl
+          curl -fsSL https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz -o /tmp/helm.tar.gz
+          tar -zxvf /tmp/helm.tar.gz -C /tmp/
+          mv /tmp/linux-amd64/helm /usr/local/bin/helm
+          chmod +x /usr/local/bin/helm
+          helm version --short
+          kubectl version --client
+          echo "✅ Helm ready"
           '''
         }
       }
@@ -96,10 +72,7 @@ spec:
       steps {
         container('builder') {
           checkout scm
-          sh '''
-            echo "✅ Checked out ${BRANCH_NAME:-unknown}"
-            git --no-pager log -1 --pretty=oneline || true
-          '''
+          sh 'git --no-pager log -1 --pretty=oneline || true'
         }
       }
     }
@@ -108,17 +81,16 @@ spec:
       steps {
         container('builder') {
           sh '''
-            set -e
-            pip3 install --upgrade pip
-            pip3 install -r app/requirements.txt pytest
-            mkdir -p test-reports
-            PYTHONPATH=. pytest app/tests/test_sample.py -v --maxfail=1 --disable-warnings --junitxml=test-reports/pytest.xml
+          pip3 install --upgrade pip
+          pip3 install -r app/requirements.txt pytest
+          mkdir -p test-reports
+          pytest app/tests/test_sample.py -v --junitxml=test-reports/pytest.xml
           '''
         }
       }
       post {
         always {
-          junit allowEmptyResults: true, testResults: 'test-reports/pytest.xml'
+          junit 'test-reports/pytest.xml'
         }
       }
     }
@@ -127,9 +99,8 @@ spec:
       steps {
         container('builder') {
           sh '''
-            set -e
-            helm lint app/helm
-            helm template ${BASE_RELEASE}-${BRANCH_NAME} app/helm --namespace ${BASE_NAMESPACE}-${BRANCH_NAME} >/dev/null
+          helm lint app/helm
+          helm template ${BASE_RELEASE}-${BRANCH_NAME} app/helm --namespace ${BASE_NAMESPACE}-${BRANCH_NAME}
           '''
         }
       }
@@ -138,14 +109,13 @@ spec:
     stage('Build & Push Docker Image') {
       steps {
         container('builder') {
-          withCredentials([usernamePassword(credentialsId: 'DockerHub', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+          withCredentials([string(credentialsId: 'dockerhub-pass', variable: 'DH_PASS')]) {
             sh '''
-              set -e
-              echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
-              docker build -t ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-${BUILD_NUMBER} -f app/Dockerfile app
-              docker push ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-${BUILD_NUMBER}
-              docker tag ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-${BUILD_NUMBER} ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-latest
-              docker push ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-latest
+            echo "$DH_PASS" | docker login -u ${DOCKERHUB_USER} --password-stdin
+            docker build -t ${DOCKERHUB_USER}/${DOCKER_IMAGE}:${BRANCH_NAME}-${BUILD_NUMBER} -f app/Dockerfile app
+            docker push ${DOCKERHUB_USER}/${DOCKER_IMAGE}:${BRANCH_NAME}-${BUILD_NUMBER}
+            docker tag ${DOCKERHUB_USER}/${DOCKER_IMAGE}:${BRANCH_NAME}-${BUILD_NUMBER} ${DOCKERHUB_USER}/${DOCKER_IMAGE}:${BRANCH_NAME}-latest
+            docker push ${DOCKERHUB_USER}/${DOCKER_IMAGE}:${BRANCH_NAME}-latest
             '''
           }
         }
@@ -156,13 +126,15 @@ spec:
       steps {
         container('builder') {
           sh '''
-            set -e
-            helm upgrade --install ${BASE_RELEASE}-${BRANCH_NAME} app/helm \
-              --set image.repository=${DOCKERHUB_REPO} \
-              --set image.tag=${BRANCH_NAME}-${BUILD_NUMBER} \
-              --namespace ${BASE_NAMESPACE}-${BRANCH_NAME} \
-              --create-namespace \
-              --atomic --cleanup-on-fail
+          RANDOM_PORT=$((32000 + RANDOM % 2000))
+          echo "🚀 Deploying with NodePort ${RANDOM_PORT}"
+          helm upgrade --install ${BASE_RELEASE}-${BRANCH_NAME} app/helm \
+            --set image.repository=${DOCKERHUB_USER}/${DOCKER_IMAGE} \
+            --set image.tag=${BRANCH_NAME}-${BUILD_NUMBER} \
+            --set service.nodePort=${RANDOM_PORT} \
+            --namespace ${BASE_NAMESPACE}-${BRANCH_NAME} \
+            --create-namespace \
+            --atomic --cleanup-on-fail
           '''
         }
       }
@@ -172,10 +144,8 @@ spec:
       steps {
         container('builder') {
           sh '''
-            set -e
-            kubectl -n ${BASE_NAMESPACE}-${BRANCH_NAME} rollout status deployment/flask-app --timeout=120s
-            kubectl -n ${BASE_NAMESPACE}-${BRANCH_NAME} get pods -o wide
-            kubectl -n ${BASE_NAMESPACE}-${BRANCH_NAME} get svc
+          kubectl rollout status deployment/flask-app -n ${BASE_NAMESPACE}-${BRANCH_NAME} --timeout=120s
+          kubectl get svc -n ${BASE_NAMESPACE}-${BRANCH_NAME}
           '''
         }
       }
@@ -184,24 +154,20 @@ spec:
 
   post {
     success {
-      echo "✅ Pipeline succeeded for ${BRANCH_NAME}"
+      echo "✅ Pipeline succeeded"
       emailext(
         to: 'ofirjean11@gmail.com',
         subject: "[MHA] ✅ Build #${env.BUILD_NUMBER} passed (${env.BRANCH_NAME})",
-        body: "All stages completed successfully.\nImage: ${env.DOCKERHUB_REPO}:${env.BRANCH_NAME}-${env.BUILD_NUMBER}\n${env.BUILD_URL}",
+        body: "Helm deployment succeeded.\nBuild URL: ${env.BUILD_URL}",
         mimeType: 'text/plain'
       )
     }
     failure {
-      echo "❌ Pipeline failed for ${BRANCH_NAME}"
+      echo "❌ Pipeline failed"
       emailext(
         to: 'ofirjean11@gmail.com',
         subject: "[MHA] ❌ Build #${env.BUILD_NUMBER} failed (${env.BRANCH_NAME})",
-        body: """Job: ${env.JOB_NAME}
-Build: ${env.BUILD_URL}
-Branch: ${env.BRANCH_NAME}
-
-Check the console output for more information.""",
+        body: "Check console output: ${env.BUILD_URL}",
         attachLog: true,
         compressLog: true,
         mimeType: 'text/plain'
