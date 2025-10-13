@@ -26,20 +26,7 @@ spec:
     - name: builder
       image: python:3.11-alpine
       command: ["/bin/sh","-lc"]
-      args:
-        - |
-          set -ex
-          apk update
-          apk add --no-cache git docker-cli bash coreutils curl tar gzip kubectl
-          curl -fsSL https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz -o /tmp/helm.tar.gz
-          mkdir -p /tmp/helm-install
-          tar -zxvf /tmp/helm.tar.gz -C /tmp/helm-install
-          mv /tmp/helm-install/linux-amd64/helm /usr/local/bin/helm
-          chmod +x /usr/local/bin/helm
-          echo "✅ Helm installed"
-          helm version --short || true
-          echo "✅ builder ready"
-          sleep infinity
+      args: ["sleep infinity"]
       env:
         - name: DOCKER_HOST
           value: tcp://localhost:2375
@@ -81,10 +68,26 @@ spec:
   }
 
   stages {
-    stage('Sanity') {
+
+    stage('Sanity & Setup') {
       steps {
         container('builder') {
-          sh 'echo "Hello from $(uname -a)"; helm version; kubectl version --client; docker version || true'
+          sh '''
+            set -ex
+            echo "🌍 Environment:"
+            uname -a
+            python3 --version
+            echo "Installing Helm..."
+            apk update
+            apk add --no-cache curl tar gzip bash coreutils docker-cli kubectl
+            curl -fsSL https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz -o /tmp/helm.tar.gz
+            tar -zxvf /tmp/helm.tar.gz -C /tmp/
+            mv /tmp/linux-amd64/helm /usr/local/bin/helm
+            chmod +x /usr/local/bin/helm
+            helm version --short
+            kubectl version --client
+            echo "✅ Environment ready"
+          '''
         }
       }
     }
@@ -94,7 +97,6 @@ spec:
         container('builder') {
           checkout scm
           sh '''
-            set -e
             echo "✅ Checked out ${BRANCH_NAME:-unknown}"
             git --no-pager log -1 --pretty=oneline || true
           '''
@@ -107,7 +109,6 @@ spec:
         container('builder') {
           sh '''
             set -e
-            python3 --version
             pip3 install --upgrade pip
             pip3 install -r app/requirements.txt pytest
             mkdir -p test-reports
@@ -142,8 +143,8 @@ spec:
               set -e
               echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
               docker build -t ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-${BUILD_NUMBER} -f app/Dockerfile app
-              docker tag ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-${BUILD_NUMBER} ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-latest
               docker push ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-${BUILD_NUMBER}
+              docker tag ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-${BUILD_NUMBER} ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-latest
               docker push ${DH_USER}/mental_health_assistant:${BRANCH_NAME}-latest
             '''
           }
@@ -151,7 +152,7 @@ spec:
       }
     }
 
-    stage('Deploy with Helm (per branch)') {
+    stage('Deploy with Helm') {
       steps {
         container('builder') {
           sh '''
@@ -187,7 +188,7 @@ spec:
       emailext(
         to: 'ofirjean11@gmail.com',
         subject: "[MHA] ✅ Build #${env.BUILD_NUMBER} passed (${env.BRANCH_NAME})",
-        body: "All stages completed.\nImage: ${env.DOCKERHUB_REPO}:${env.BRANCH_NAME}-${env.BUILD_NUMBER}\n${env.BUILD_URL}",
+        body: "All stages completed successfully.\nImage: ${env.DOCKERHUB_REPO}:${env.BRANCH_NAME}-${env.BUILD_NUMBER}\n${env.BUILD_URL}",
         mimeType: 'text/plain'
       )
     }
@@ -200,7 +201,7 @@ spec:
 Build: ${env.BUILD_URL}
 Branch: ${env.BRANCH_NAME}
 
-Please check the console log for details.""",
+Check the console output for more information.""",
         attachLog: true,
         compressLog: true,
         mimeType: 'text/plain'
