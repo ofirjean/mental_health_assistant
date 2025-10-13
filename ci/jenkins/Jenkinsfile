@@ -11,9 +11,9 @@ spec:
   serviceAccountName: jenkins
   containers:
   - name: builder
-    image: python:3.11-alpine
+    image: python:3.11-slim
     tty: true
-    command: ["/bin/sh", "-lc"]
+    command: ["/bin/bash", "-lc"]
     args: ["sleep infinity"]
     env:
     - name: DOCKER_HOST
@@ -54,15 +54,19 @@ spec:
         container('builder') {
           sh '''
           set -ex
-          apk update
-          apk add --no-cache git curl tar gzip bash coreutils docker-cli kubectl
+          echo "🔧 Builder container ready: $(uname -a)"
+          sleep 5
+
+          apt update -y
+          apt install -y curl tar gzip bash git docker.io kubectl
+
           curl -fsSL https://get.helm.sh/helm-v3.15.2-linux-amd64.tar.gz -o /tmp/helm.tar.gz
           tar -zxvf /tmp/helm.tar.gz -C /tmp/
           mv /tmp/linux-amd64/helm /usr/local/bin/helm
           chmod +x /usr/local/bin/helm
           helm version --short
           kubectl version --client
-          echo "✅ Helm ready"
+          echo "✅ Sanity check complete"
           '''
         }
       }
