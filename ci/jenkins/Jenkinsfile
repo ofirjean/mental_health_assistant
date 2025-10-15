@@ -102,8 +102,9 @@ spec:
           sh '''
             set -ex
             echo "🚀 Deploying Helm release into namespace: jenkins"
+            # Reduced timeout from 15m to 90s for faster feedback
             helm upgrade --install mental-health-app ./app/helm -n jenkins \
-              --create-namespace --atomic --timeout 15m0s --wait
+              --create-namespace --atomic --wait --timeout 90s
 
             echo "✅ Helm deployment completed successfully"
           '''
@@ -116,7 +117,7 @@ spec:
         container('builder') {
           sh '''
             echo "🔍 Verifying deployment..."
-            kubectl -n jenkins rollout status deploy/flask-app --timeout=90s || true
+            kubectl -n jenkins rollout status deploy/flask-app --timeout=60s || true
             kubectl -n jenkins get all
             kubectl -n jenkins describe pods | tail -n 50
           '''
