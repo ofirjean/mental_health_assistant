@@ -15,11 +15,7 @@ spec:
   containers:
   - name: builder
     image: python:3.11-alpine
-    command:
-    - /bin/sh
-    - -lc
-    args:
-    - sleep infinity
+    command: ["/bin/sh", "-lc", "sleep infinity"]
     tty: true
     env:
     - name: DOCKER_HOST
@@ -83,6 +79,7 @@ spec:
             tar -zxf helm-v3.15.2-linux-amd64.tar.gz
             mv linux-amd64/helm /usr/local/bin/helm
             chmod +x /usr/local/bin/helm
+
             helm lint app/helm
             helm template app/helm
           '''
@@ -94,8 +91,9 @@ spec:
       steps {
         container('builder') {
           sh '''
+            set -ex
             docker build -t $IMAGE_REPO:$BRANCH_NAME .
-            echo "✅ Image built (push skipped)"
+            echo "✅ Image built successfully (push skipped for local)"
           '''
         }
       }
@@ -105,7 +103,9 @@ spec:
       steps {
         container('builder') {
           sh '''
-            helm upgrade --install mental-health-app ./app/helm -n mental-health --create-namespace --atomic
+            set -ex
+            echo "🚀 Deploying Helm release into namespace: jenkins"
+            helm upgrade --install mental-health-app ./app/helm -n jenkins --create-namespace --atomic
           '''
         }
       }
@@ -115,8 +115,9 @@ spec:
       steps {
         container('builder') {
           sh '''
-            kubectl -n mental-health rollout status deploy/flask-app
-            kubectl -n mental-health get pods
+            echo "🔍 Verifying deployment..."
+            kubectl -n jenkins rollout status deploy/flask-app
+            kubectl -n jenkins get pods -o wide
           '''
         }
       }
@@ -125,14 +126,10 @@ spec:
 
   post {
     success {
-      mail to: 'ofirjean11@gmail.com',
-           subject: "✅ Jenkins Pipeline Succeeded: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-           body: "Pipeline completed successfully!"
+      echo "✅ Pipeline completed successfully!"
     }
     failure {
-      mail to: 'ofirjean11@gmail.com',
-           subject: "❌ Jenkins Pipeline Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
-           body: "Pipeline failed — check Jenkins logs."
+      echo "❌ Pipeline failed. Check logs above."
     }
   }
 }
