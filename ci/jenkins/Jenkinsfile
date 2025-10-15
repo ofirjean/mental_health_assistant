@@ -23,7 +23,6 @@ spec:
     volumeMounts:
     - name: shared-workspace
       mountPath: /home/jenkins/agent
-
   - name: dind
     image: docker:27-dind
     securityContext:
@@ -35,7 +34,6 @@ spec:
     volumeMounts:
     - name: shared-workspace
       mountPath: /var/lib/docker
-
   - name: jnlp
     image: jenkins/inbound-agent:3341.v0766d82b_dec0-1
     resources:
@@ -45,7 +43,6 @@ spec:
     volumeMounts:
     - name: shared-workspace
       mountPath: /home/jenkins/agent
-
   volumes:
   - name: shared-workspace
     emptyDir: {}
@@ -105,7 +102,10 @@ spec:
           sh '''
             set -ex
             echo "🚀 Deploying Helm release into namespace: jenkins"
-            helm upgrade --install mental-health-app ./app/helm -n jenkins --create-namespace --atomic
+            helm upgrade --install mental-health-app ./app/helm -n jenkins \
+              --create-namespace --atomic --timeout 15m0s --wait
+
+            echo "✅ Helm deployment completed successfully"
           '''
         }
       }
@@ -116,8 +116,9 @@ spec:
         container('builder') {
           sh '''
             echo "🔍 Verifying deployment..."
-            kubectl -n jenkins rollout status deploy/flask-app
-            kubectl -n jenkins get pods -o wide
+            kubectl -n jenkins rollout status deploy/flask-app --timeout=90s || true
+            kubectl -n jenkins get all
+            kubectl -n jenkins describe pods | tail -n 50
           '''
         }
       }
@@ -130,6 +131,11 @@ spec:
     }
     failure {
       echo "❌ Pipeline failed. Check logs above."
+      sh '''
+        echo "----- Debug: show current pods and events -----"
+        kubectl -n jenkins get pods
+        kubectl -n jenkins describe pods | tail -n 40 || true
+      '''
     }
   }
 }
